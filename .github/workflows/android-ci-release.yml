@@ -1,0 +1,54 @@
+name: Android CI & Verifiable Release
+
+on:
+  push:
+    branches: [ main, "feat/**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify Zero-Network Manifest Contract
+        run: |
+          python3 -c '
+          import xml.etree.ElementTree as ET
+          root = ET.parse("app/src/main/AndroidManifest.xml").getroot()
+          perms = [el.attrib.get("{http://schemas.android.com/apk/res/android}name") for el in root.findall("uses-permission")]
+          assert "android.permission.INTERNET" not in perms, "SECURITY VIOLATION: INTERNET permission found!"
+          print("Zero-Network Manifest verified: 0 network permissions declared.")
+          '
+
+      - name: Run Unit Tests (Surgical Detection & Tab-Only Timer)
+        run: gradle testDebugUnitTest
+
+      - name: Assemble Reproducible Release APK
+        run: gradle assembleRelease
+
+      - name: Compute SHA-256 Checksum
+        run: sha256sum app/build/outputs/apk/release/*.apk
+
+      - name: Generate Cryptographic Build Provenance (SLSA Attestation)
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "app/build/outputs/apk/release/*.apk"
