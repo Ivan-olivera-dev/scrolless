@@ -1,5 +1,6 @@
 package com.scrolless.app.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,8 +22,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,6 +85,11 @@ class InterruptionActivity : ComponentActivity() {
                     isEs = isEs,
                     onExitShortForm = {
                         ScrollessAccessibilityService.instance?.bounceBackFromShortForm()
+                        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                            addCategory(Intent.CATEGORY_HOME)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(homeIntent)
                         finish()
                     },
                     onContinueMindfully = {
@@ -140,6 +148,8 @@ fun InterruptionScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(palette.bgColor),
         contentAlignment = Alignment.Center
     ) {
@@ -147,7 +157,7 @@ fun InterruptionScreen(
             modifier = Modifier
                 .widthIn(max = 420.dp)
                 .fillMaxWidth()
-                .padding(horizontal = 26.dp, vertical = 36.dp),
+                .padding(start = 22.dp, end = 22.dp, top = 44.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {

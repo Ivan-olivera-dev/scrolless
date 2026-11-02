@@ -4,6 +4,7 @@ import android.content.Context
 import com.scrolless.app.core.ProtectionMode
 import com.scrolless.app.core.SessionAndStreakManager
 import com.scrolless.app.core.SessionAndStreakState
+import com.scrolless.app.core.ShortFormTarget
 import java.time.LocalDate
 
 class LocalStore(context: Context) {
@@ -18,6 +19,17 @@ class LocalStore(context: Context) {
         val mode = runCatching { ProtectionMode.valueOf(modeName) }
             .getOrDefault(ProtectionMode.MINDFUL_BUDGET)
 
+        val rawTargets = prefs.getString("enabled_targets", null)
+        val enabledTargets: Set<ShortFormTarget> = if (rawTargets == null) {
+            ShortFormTarget.entries.toSet()
+        } else if (rawTargets.isBlank()) {
+            emptySet()
+        } else {
+            rawTargets.split(",")
+                .mapNotNull { name -> runCatching { ShortFormTarget.valueOf(name.trim()) }.getOrNull() }
+                .toSet()
+        }
+
         var state = SessionAndStreakState(
             mode = mode,
             dailyLimitSeconds = prefs.getInt("daily_limit_sec", mode.defaultDailyLimitSeconds),
@@ -26,7 +38,8 @@ class LocalStore(context: Context) {
             weeklyInterceptions = prefs.getInt("weekly_interceptions", 14),
             streakDays = prefs.getInt("streak_days", 4),
             streakShields = prefs.getInt("streak_shields", 1),
-            mindfulAllowanceUntilEpochSec = prefs.getLong("mindful_until_epoch", 0L)
+            mindfulAllowanceUntilEpochSec = prefs.getLong("mindful_until_epoch", 0L),
+            enabledTargets = enabledTargets
         )
 
         if (lastDate != todayIso) {
@@ -38,6 +51,7 @@ class LocalStore(context: Context) {
     }
 
     fun saveState(state: SessionAndStreakState) {
+        val targetsString = state.enabledTargets.joinToString(",") { it.name }
         prefs.edit()
             .putString("protection_mode", state.mode.name)
             .putInt("daily_limit_sec", state.dailyLimitSeconds)
@@ -47,6 +61,7 @@ class LocalStore(context: Context) {
             .putInt("streak_days", state.streakDays)
             .putInt("streak_shields", state.streakShields)
             .putLong("mindful_until_epoch", state.mindfulAllowanceUntilEpochSec)
+            .putString("enabled_targets", targetsString)
             .putString("last_date_iso", LocalDate.now().toString())
             .apply()
     }

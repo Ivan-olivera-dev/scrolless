@@ -51,18 +51,27 @@ class ScrollessAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val root = rootInActiveWindow ?: return
-        val pkg = event?.packageName?.toString() ?: root.packageName?.toString() ?: return
+        val root = rootInActiveWindow
+        val source = event?.source
+        val pkg = event?.packageName?.toString() ?: root?.packageName?.toString() ?: source?.packageName?.toString() ?: return
         if (pkg == applicationContext.packageName) return
 
-        val viewIds = mutableSetOf<String>()
-        collectViewIds(root, viewIds, depth = 0)
-
-        if (store.isInspectorEnabled() && viewIds.isNotEmpty()) {
-            store.recordInspectedViewIds(viewIds)
+        val data = NodeData()
+        root?.let { traverseNode(it, data, depth = 0) }
+        if (data.visitedCount < 400 && source != null && source != root) {
+            traverseNode(source, data, depth = 0)
         }
 
-        val snapshot = WindowSnapshot(packageName = pkg, viewIds = viewIds)
+        if (store.isInspectorEnabled() && data.viewIds.isNotEmpty()) {
+            store.recordInspectedViewIds(data.viewIds)
+        }
+
+        val snapshot = WindowSnapshot(
+            packageName = pkg,
+            viewIds = data.viewIds,
+            contentDescriptions = data.contentDescriptions,
+            selectedNodeLabels = data.selectedNodeLabels
+        )
         val detection = detectionEngine.evaluateWindow(snapshot)
         val nowSec = System.currentTimeMillis() / 1000L
 
@@ -81,7 +90,7 @@ class ScrollessAccessibilityService : AccessibilityService() {
     fun bounceBackFromShortForm() {
         val updated = SessionAndStreakManager.onUserBouncedBack(store.loadState())
         store.saveState(updated)
-        performGlobalAction(GLOBAL_ACTION_BACK)
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     private fun launchInterruptionScreen(decision: InterventionDecision.ShowInterruption) {
@@ -95,11 +104,41 @@ class ScrollessAccessibilityService : AccessibilityService() {
         startActivity(intent)
     }
 
-    private fun collectViewIds(node: AccessibilityNodeInfo?, out: MutableSet<String>, depth: Int) {
-        if (node == null || depth > 18 || out.size > 60) return
-        node.viewIdResourceName?.let { out.add(it) }
+    private class NodeData {
+        val viewIds = mutableSetOf<String>()
+        val selectedNodeLabels = mutableSetOf<String>()
+        val contentDescriptions = mutableSetOf<String>()
+        var visitedCount = 0
+    }
+
+    private fun traverseNode(node: AccessibilityNodeInfo?, data: NodeData, depth: Int) {
+        if (node == null || depth > 35 || data.visitedCount >= 400) return
+        data.visitedCount++
+
+        node.viewIdResourceName?.let { data.viewIds.add(it) }
+
+        val desc = node.contentDescription?.toString()
+        val text = node.text?.toString()
+
+        if (!desc.isNullOrBlank()) {
+            data.contentDescriptions.add(desc)
+        }
+        if (!text.isNullOrBlank()) {
+            data.contentDescriptions.add(text)
+        }
+
+        if (node.isSelected) {
+            if (!desc.isNullOrBlank()) {
+                data.selectedNodeLabels.add(desc)
+            }
+            if (!text.isNullOrBlank()) {
+                data.selectedNodeLabels.add(text)
+            }
+        }
+
         for (i in 0 until node.childCount) {
-            collectViewIds(node.getChild(i), out, depth + 1)
+            if (data.visitedCount >= 400) break
+            traverseNode(node.getChild(i), data, depth + 1)
         }
     }
 

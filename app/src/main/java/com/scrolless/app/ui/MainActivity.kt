@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.scrolless.app.core.ProtectionMode
+import com.scrolless.app.core.ShortFormTarget
 import com.scrolless.app.data.LocalStore
 import com.scrolless.app.service.ScrollessAccessibilityService
 
@@ -19,8 +20,6 @@ class MainActivity : ComponentActivity() {
     private var isServiceActive by mutableStateOf(false)
     private var isDark by mutableStateOf(false)
     private var lang by mutableStateOf("es")
-    private var inspectorEnabled by mutableStateOf(false)
-    private var inspectedIds by mutableStateOf<List<String>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,8 +33,6 @@ class MainActivity : ComponentActivity() {
                     isServiceActive = isServiceActive,
                     lang = lang,
                     isDark = isDark,
-                    inspectorEnabled = inspectorEnabled,
-                    inspectedIds = inspectedIds,
                     onToggleLang = {
                         lang = if (lang == "es") "en" else "es"
                         store.setLanguage(lang)
@@ -52,13 +49,35 @@ class MainActivity : ComponentActivity() {
                         store.saveState(updated)
                         uiState = updated
                     },
+                    onCustomMinutesApply = { minutes: Int ->
+                        val newLimitSec = minutes * 60
+                        val newMode = if (minutes == 0) {
+                            ProtectionMode.SURGICAL_BLOCK
+                        } else if (uiState.mode == ProtectionMode.SURGICAL_BLOCK) {
+                            ProtectionMode.MINDFUL_BUDGET
+                        } else {
+                            uiState.mode
+                        }
+                        val updated = uiState.copy(
+                            mode = newMode,
+                            dailyLimitSeconds = newLimitSec
+                        )
+                        store.saveState(updated)
+                        uiState = updated
+                    },
+                    onToggleTarget = { target: ShortFormTarget ->
+                        val currentTargets = uiState.enabledTargets
+                        val nextTargets = if (target in currentTargets) {
+                            currentTargets - target
+                        } else {
+                            currentTargets + target
+                        }
+                        val updated = uiState.copy(enabledTargets = nextTargets)
+                        store.saveState(updated)
+                        uiState = updated
+                    },
                     onOpenAccessibilitySettings = {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    },
-                    onToggleInspector = {
-                        inspectorEnabled = !inspectorEnabled
-                        store.setInspectorEnabled(inspectorEnabled)
-                        inspectedIds = store.getLastInspectedViewIds()
                     }
                 )
             }
@@ -75,7 +94,5 @@ class MainActivity : ComponentActivity() {
         isServiceActive = ScrollessAccessibilityService.isRunning
         isDark = store.isDarkTheme(defaultDark = false)
         lang = store.getLanguage()
-        inspectorEnabled = store.isInspectorEnabled()
-        inspectedIds = store.getLastInspectedViewIds()
     }
 }

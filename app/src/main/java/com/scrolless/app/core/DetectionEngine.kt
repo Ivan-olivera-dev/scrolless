@@ -9,7 +9,8 @@ enum class ShortFormTarget(val displayName: String, val packageName: String) {
 data class WindowSnapshot(
     val packageName: String,
     val viewIds: Set<String>,
-    val contentDescriptions: Set<String> = emptySet()
+    val contentDescriptions: Set<String> = emptySet(),
+    val selectedNodeLabels: Set<String> = emptySet()
 )
 
 data class DetectionResult(
@@ -49,6 +50,23 @@ class DetectionEngine(
             "com.google.android.youtube:id/reel_watch_fragment_root",
             "com.google.android.youtube:id/shorts_container"
         )
+
+        private val INSTAGRAM_REEL_ID_SUBSTRINGS = listOf(
+            "clips_viewer",
+            "clips_video",
+            "reel_viewer",
+            "clips_swipe",
+            "clips_item",
+            "clips_author",
+            "clips_ufi"
+        )
+
+        private val YOUTUBE_SHORTS_ID_SUBSTRINGS = listOf(
+            "reel_player",
+            "reel_recycler",
+            "reel_watch",
+            "shorts_"
+        )
     }
 
     fun evaluateWindow(snapshot: WindowSnapshot): DetectionResult {
@@ -63,11 +81,22 @@ class DetectionEngine(
         }
 
         if (pkg == "com.instagram.android") {
-            if (snapshot.viewIds.any { it in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS }) {
+            val hasSafeDmId = snapshot.viewIds.any { id ->
+                val lower = id.lowercase()
+                lower.contains("direct_thread") ||
+                    lower.contains("row_inbox") ||
+                    lower.contains("message_list") ||
+                    id in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS
+            }
+            if (hasSafeDmId) {
                 return DetectionResult(isShortForm = false)
             }
-            val matchedId = snapshot.viewIds.firstOrNull {
-                it in INSTAGRAM_REEL_VIEW_IDS || it in customReelViewIds
+
+            val matchedId = snapshot.viewIds.firstOrNull { id ->
+                val lower = id.lowercase()
+                id in INSTAGRAM_REEL_VIEW_IDS ||
+                    id in customReelViewIds ||
+                    INSTAGRAM_REEL_ID_SUBSTRINGS.any { lower.contains(it) }
             }
             if (matchedId != null) {
                 return DetectionResult(
@@ -76,12 +105,44 @@ class DetectionEngine(
                     matchedSignal = matchedId
                 )
             }
+
+            val matchedSelectedLabel = snapshot.selectedNodeLabels.firstOrNull { label ->
+                val lower = label.lowercase().trim()
+                lower == "reels" || lower.startsWith("reels,") || lower.startsWith("reels ")
+            }
+            if (matchedSelectedLabel != null) {
+                return DetectionResult(
+                    isShortForm = true,
+                    target = ShortFormTarget.INSTAGRAM_REELS,
+                    matchedSignal = "selectedTab:$matchedSelectedLabel"
+                )
+            }
+
+            val hasReelsDesc = snapshot.contentDescriptions.any { desc ->
+                val lower = desc.lowercase().trim()
+                lower == "reels" || lower.startsWith("reels,") || lower.startsWith("reels ") || lower.contains("reels")
+            }
+            val hasReelsAudioOrRemix = snapshot.contentDescriptions.any { desc ->
+                val lower = desc.lowercase()
+                lower.contains("audio original") || lower.contains("original audio") || lower.contains("remix")
+            }
+            if (hasReelsDesc && hasReelsAudioOrRemix) {
+                return DetectionResult(
+                    isShortForm = true,
+                    target = ShortFormTarget.INSTAGRAM_REELS,
+                    matchedSignal = "contentDesc:reels+audio"
+                )
+            }
+
             return DetectionResult(isShortForm = false)
         }
 
         if (pkg == "com.google.android.youtube") {
-            val matchedId = snapshot.viewIds.firstOrNull {
-                it in YOUTUBE_SHORTS_VIEW_IDS || it in customReelViewIds
+            val matchedId = snapshot.viewIds.firstOrNull { id ->
+                val lower = id.lowercase()
+                id in YOUTUBE_SHORTS_VIEW_IDS ||
+                    id in customReelViewIds ||
+                    YOUTUBE_SHORTS_ID_SUBSTRINGS.any { lower.contains(it) }
             }
             if (matchedId != null) {
                 return DetectionResult(
@@ -90,6 +151,19 @@ class DetectionEngine(
                     matchedSignal = matchedId
                 )
             }
+
+            val matchedSelectedLabel = snapshot.selectedNodeLabels.firstOrNull { label ->
+                val lower = label.lowercase().trim()
+                lower == "shorts" || lower.startsWith("shorts,") || lower.startsWith("shorts ")
+            }
+            if (matchedSelectedLabel != null) {
+                return DetectionResult(
+                    isShortForm = true,
+                    target = ShortFormTarget.YOUTUBE_SHORTS,
+                    matchedSignal = "selectedTab:$matchedSelectedLabel"
+                )
+            }
+
             return DetectionResult(isShortForm = false)
         }
 

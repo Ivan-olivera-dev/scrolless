@@ -98,4 +98,102 @@ class CoreEngineTest {
         assertEquals(7, day8State.streakDays)
         assertEquals(1, day8State.streakShields)
     }
+
+    @Test
+    fun `detects Instagram Reels via clips substring view ID`() {
+        val snapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/clips_viewer_container")
+        )
+        val result = engine.evaluateWindow(snapshot)
+        assertTrue(result.isShortForm)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, result.target)
+    }
+
+    @Test
+    fun `detects Instagram Reels via selected bottom tab label Reels`() {
+        val snapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = emptySet(),
+            selectedNodeLabels = setOf("Reels")
+        )
+        val result = engine.evaluateWindow(snapshot)
+        assertTrue(result.isShortForm)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, result.target)
+    }
+
+    @Test
+    fun `deselected surgical target is allowed and does not start timer`() {
+        val disabledInstagram = SessionAndStreakState(
+            mode = ProtectionMode.SURGICAL_BLOCK,
+            enabledTargets = setOf(ShortFormTarget.YOUTUBE_SHORTS, ShortFormTarget.TIKTOK)
+        )
+        val reelsDetection = engine.evaluateWindow(
+            WindowSnapshot("com.instagram.android", setOf("com.instagram.android:id/clips_viewer_view_pager"))
+        )
+        val (state, decision) = SessionAndStreakManager.onWindowEvaluated(disabledInstagram, reelsDetection, 1000L)
+        assertTrue(decision is InterventionDecision.Allow)
+        assertFalse(state.isCurrentlyInReelTab)
+    }
+
+    @Test
+    fun `detects YouTube Shorts via selected bottom tab label Shorts`() {
+        val snapshot = WindowSnapshot(
+            packageName = "com.google.android.youtube",
+            viewIds = emptySet(),
+            selectedNodeLabels = setOf("Shorts")
+        )
+        val result = engine.evaluateWindow(snapshot)
+        assertTrue(result.isShortForm)
+        assertEquals(ShortFormTarget.YOUTUBE_SHORTS, result.target)
+    }
+
+    @Test
+    fun `detects YouTube Shorts via reel player substring view ID`() {
+        val snapshot = WindowSnapshot(
+            packageName = "com.google.android.youtube",
+            viewIds = setOf("com.google.android.youtube:id/reel_player_fragment_root")
+        )
+        val result = engine.evaluateWindow(snapshot)
+        assertTrue(result.isShortForm)
+        assertEquals(ShortFormTarget.YOUTUBE_SHORTS, result.target)
+    }
+
+    @Test
+    fun `detects Instagram Reels via contentDescriptions containing reels and original audio`() {
+        val snapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = emptySet(),
+            contentDescriptions = setOf("Reels, video", "Original audio by artist")
+        )
+        val result = engine.evaluateWindow(snapshot)
+        assertTrue(result.isShortForm)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, result.target)
+    }
+
+    @Test
+    fun `safe Instagram direct thread suppresses Reels detection`() {
+        val snapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf(
+                "com.instagram.android:id/direct_thread_toggle",
+                "com.instagram.android:id/clips_viewer_container"
+            )
+        )
+        val result = engine.evaluateWindow(snapshot)
+        assertFalse(result.isShortForm)
+    }
+
+    @Test
+    fun `onUserBouncedBack clears reel state and resets mindful allowance`() {
+        val active = SessionAndStreakState(
+            isCurrentlyInReelTab = true,
+            currentTarget = ShortFormTarget.INSTAGRAM_REELS,
+            mindfulAllowanceUntilEpochSec = 5000L
+        )
+        val bounced = SessionAndStreakManager.onUserBouncedBack(active)
+        assertFalse(bounced.isCurrentlyInReelTab)
+        assertEquals(null, bounced.currentTarget)
+        assertEquals(0L, bounced.mindfulAllowanceUntilEpochSec)
+    }
 }

@@ -14,19 +14,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,11 +47,15 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.ProtectionMode
 import com.scrolless.app.core.SessionAndStreakManager
 import com.scrolless.app.core.SessionAndStreakState
+import com.scrolless.app.core.ShortFormTarget
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -52,13 +65,12 @@ fun DashboardScreen(
     isServiceActive: Boolean,
     lang: String,
     isDark: Boolean,
-    inspectorEnabled: Boolean,
-    inspectedIds: List<String>,
     onToggleLang: () -> Unit,
     onToggleTheme: () -> Unit,
     onSelectMode: (ProtectionMode) -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
-    onToggleInspector: () -> Unit
+    onCustomMinutesApply: (Int) -> Unit,
+    onToggleTarget: (ShortFormTarget) -> Unit,
+    onOpenAccessibilitySettings: () -> Unit
 ) {
     val palette = LocalPlayaPalette.current
     val isEs = lang == "es"
@@ -71,6 +83,8 @@ fun DashboardScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(palette.bgColor),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -79,7 +93,7 @@ fun DashboardScreen(
                 .widthIn(max = 460.dp)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp, vertical = 32.dp),
+                .padding(start = 22.dp, end = 22.dp, top = 44.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1. Minimalist Architectural Top Bar
@@ -113,7 +127,7 @@ fun DashboardScreen(
                 isEs = isEs
             )
 
-            // 5. Tactile Intervention Mode Selector (3 Architectural Cards)
+            // 5. Tactile Intervention Mode Selector (3 Architectural Cards + Custom Minutes)
             SectionHeader(
                 title = if (isEs) "PROTOCOLO DE INTERVENCIÓN" else "INTERVENTION PROTOCOL"
             )
@@ -122,19 +136,20 @@ fun DashboardScreen(
                 isEs = isEs,
                 onSelectMode = onSelectMode
             )
+            CustomMinutesCard(
+                currentMinutes = state.dailyLimitSeconds / 60,
+                isEs = isEs,
+                onApplyMinutes = onCustomMinutesApply
+            )
 
             // 6. Surgical Target Matrix (Per-Platform Scope)
             SectionHeader(
                 title = if (isEs) "COBERTURA QUIRÚRGICA ACTIVA" else "ACTIVE SURGICAL TARGETS"
             )
-            SurgicalTargetsPanel(isEs = isEs)
-
-            // 7. Zero-Network Kernel Proof & Live Node Inspector
-            SecurityAndInspectorFooter(
+            SurgicalTargetsPanel(
+                enabledTargets = state.enabledTargets,
                 isEs = isEs,
-                inspectorEnabled = inspectorEnabled,
-                inspectedIds = inspectedIds,
-                onToggleInspector = onToggleInspector
+                onToggleTarget = onToggleTarget
             )
         }
     }
@@ -752,7 +767,105 @@ private fun ModeOptionCard(
 }
 
 @Composable
-private fun SurgicalTargetsPanel(isEs: Boolean) {
+private fun CustomMinutesCard(
+    currentMinutes: Int,
+    isEs: Boolean,
+    onApplyMinutes: (Int) -> Unit
+) {
+    val palette = LocalPlayaPalette.current
+    var inputText by remember(currentMinutes) { mutableStateOf(currentMinutes.toString()) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(palette.surfaceColor)
+            .border(1.dp, palette.borderColor, RoundedCornerShape(18.dp))
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = if (isEs) "Límite personalizado" else "Custom daily limit",
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                color = palette.textPrimary
+            )
+            Text(
+                text = if (isEs) "Minutos al día (0 = bloqueo total)" else "Minutes/day (0 = zero-scroll)",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary
+            )
+        }
+
+        OutlinedTextField(
+            value = inputText,
+            onValueChange = { newValue ->
+                val filtered = newValue.filter { it.isDigit() }.take(3)
+                inputText = filtered
+            },
+            modifier = Modifier.width(76.dp),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                color = palette.textPrimary
+            ),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    val mins = inputText.toIntOrNull()
+                    if (mins != null && mins in 0..300) {
+                        onApplyMinutes(mins)
+                    }
+                }
+            ),
+            shape = RoundedCornerShape(10.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = palette.textPrimary,
+                unfocusedBorderColor = palette.borderColor,
+                focusedContainerColor = palette.bgColor,
+                unfocusedContainerColor = palette.bgColor
+            )
+        )
+
+        Box(
+            modifier = Modifier
+                .height(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(palette.textPrimary)
+                .clickable {
+                    val mins = inputText.toIntOrNull()
+                    if (mins != null && mins in 0..300) {
+                        onApplyMinutes(mins)
+                    }
+                }
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (isEs) "Aplicar" else "Apply",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Medium,
+                    color = palette.bgColor
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SurgicalTargetsPanel(
+    enabledTargets: Set<ShortFormTarget>,
+    isEs: Boolean,
+    onToggleTarget: (ShortFormTarget) -> Unit
+) {
     val palette = LocalPlayaPalette.current
     Column(
         modifier = Modifier
@@ -760,24 +873,33 @@ private fun SurgicalTargetsPanel(isEs: Boolean) {
             .clip(RoundedCornerShape(20.dp))
             .background(palette.surfaceColor)
             .border(1.dp, palette.borderColor, RoundedCornerShape(20.dp))
-            .padding(horizontal = 18.dp, vertical = 8.dp)
+            .padding(horizontal = 18.dp, vertical = 6.dp)
     ) {
         SurgicalTargetRow(
-            appTitle = "Instagram",
+            appTitle = "Instagram Reels",
             allowedScope = if (isEs) "DMs, historias y feed libres" else "DMs, stories & feed unrestricted",
-            blockedChip = "Reels Tab"
+            blockedChip = "Reels Tab",
+            enabled = ShortFormTarget.INSTAGRAM_REELS in enabledTargets,
+            isEs = isEs,
+            onToggle = { onToggleTarget(ShortFormTarget.INSTAGRAM_REELS) }
         )
         HorizontalDivider(thickness = 1.dp, color = palette.borderColor)
         SurgicalTargetRow(
-            appTitle = "YouTube",
+            appTitle = "YouTube Shorts",
             allowedScope = if (isEs) "Videos largos y búsquedas libres" else "Long-form videos & search unrestricted",
-            blockedChip = "Shorts Player"
+            blockedChip = "Shorts Player",
+            enabled = ShortFormTarget.YOUTUBE_SHORTS in enabledTargets,
+            isEs = isEs,
+            onToggle = { onToggleTarget(ShortFormTarget.YOUTUBE_SHORTS) }
         )
         HorizontalDivider(thickness = 1.dp, color = palette.borderColor)
         SurgicalTargetRow(
             appTitle = "TikTok",
             allowedScope = if (isEs) "Intervención en toda la aplicación" else "Full application short-form scope",
-            blockedChip = "Full App"
+            blockedChip = "Full App",
+            enabled = ShortFormTarget.TIKTOK in enabledTargets,
+            isEs = isEs,
+            onToggle = { onToggleTarget(ShortFormTarget.TIKTOK) }
         )
     }
 }
@@ -786,119 +908,85 @@ private fun SurgicalTargetsPanel(isEs: Boolean) {
 private fun SurgicalTargetRow(
     appTitle: String,
     allowedScope: String,
-    blockedChip: String
+    blockedChip: String,
+    enabled: Boolean,
+    isEs: Boolean,
+    onToggle: () -> Unit
 ) {
     val palette = LocalPlayaPalette.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onToggle() }
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = appTitle,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = palette.textPrimary
-            )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = appTitle,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                    color = palette.textPrimary
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(palette.bgColor)
+                        .border(1.dp, palette.borderColor, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = blockedChip,
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
+                        color = palette.textSecondary
+                    )
+                }
+            }
             Text(
                 text = allowedScope,
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.textSecondary
             )
         }
+
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(999.dp))
-                .background(palette.bgColor)
-                .border(1.dp, palette.borderColor, RoundedCornerShape(999.dp))
-                .padding(horizontal = 10.dp, vertical = 5.dp)
+                .background(if (enabled) palette.success.copy(alpha = 0.16f) else palette.bgColor)
+                .border(
+                    width = 1.dp,
+                    color = if (enabled) palette.success else palette.borderColor,
+                    shape = RoundedCornerShape(999.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            Text(
-                text = blockedChip,
-                style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                color = palette.textPrimary
-            )
-        }
-    }
-}
-
-@Composable
-private fun SecurityAndInspectorFooter(
-    isEs: Boolean,
-    inspectorEnabled: Boolean,
-    inspectedIds: List<String>,
-    onToggleInspector: () -> Unit
-) {
-    val palette = LocalPlayaPalette.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(palette.surfaceColor)
-            .border(1.dp, palette.borderColor, RoundedCornerShape(18.dp))
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (isEs) "GARANTÍA CERO-RED · OPEN SOURCE" else "ZERO-NETWORK GUARANTEE · OPEN SOURCE",
-                style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                color = palette.success
-            )
-            Text(
-                text = "SHA-256",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                ),
-                color = palette.textSecondary
-            )
-        }
-        Text(
-            text = if (isEs) {
-                "Compilado sin permiso android.permission.INTERNET. Ningún byte puede abandonar tu dispositivo."
-            } else {
-                "Compiled without android.permission.INTERNET. Zero bytes can leave your device."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = palette.textSecondary
-        )
-        Text(
-            text = if (inspectorEnabled) {
-                if (isEs) "Ocultar inspector de nodos en vivo" else "Hide live node inspector"
-            } else {
-                if (isEs) "Inspeccionar View IDs en vivo (colaboradores)" else "Inspect live View IDs (contributors)"
-            },
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-            color = palette.textPrimary,
-            modifier = Modifier.clickable { onToggleInspector() }
-        )
-
-        if (inspectorEnabled) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(palette.bgColor)
-                    .border(1.dp, palette.borderColor, RoundedCornerShape(10.dp))
-                    .padding(12.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                val idsText = if (inspectedIds.isEmpty()) {
-                    if (isEs) "Abrí Instagram o YouTube para capturar los resource-id activos."
-                    else "Open Instagram or YouTube to capture active resource-id nodes."
-                } else {
-                    inspectedIds.joinToString("\n")
+                if (enabled) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(palette.success)
+                    )
                 }
                 Text(
-                    text = idsText,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = palette.textSecondary
+                    text = if (enabled) {
+                        if (isEs) "ACTIVO" else "ON"
+                    } else {
+                        if (isEs) "DESACTIVADO" else "OFF"
+                    },
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
+                    color = if (enabled) palette.success else palette.textSecondary
                 )
             }
         }

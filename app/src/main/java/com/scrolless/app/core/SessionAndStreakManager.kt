@@ -35,7 +35,8 @@ data class SessionAndStreakState(
     val weeklyInterceptions: Int = 0,
     val streakDays: Int = 1,
     val streakShields: Int = 1,
-    val mindfulAllowanceUntilEpochSec: Long = 0L
+    val mindfulAllowanceUntilEpochSec: Long = 0L,
+    val enabledTargets: Set<ShortFormTarget> = ShortFormTarget.entries.toSet()
 ) {
     val remainingSecondsToday: Int
         get() = max(0, dailyLimitSeconds - activeReelSecondsToday)
@@ -58,8 +59,8 @@ object SessionAndStreakManager {
         detection: DetectionResult,
         nowEpochSec: Long
     ): Pair<SessionAndStreakState, InterventionDecision> {
-        if (!detection.isShortForm || detection.target == null) {
-            // Immediately pause timer when user returns to normal feed, DMs, or long-form video
+        if (!detection.isShortForm || detection.target == null || detection.target !in state.enabledTargets) {
+            // Immediately pause timer when user returns to normal feed, DMs, long-form video, or if target is disabled
             return state.copy(
                 isCurrentlyInReelTab = false,
                 currentTarget = null
@@ -109,9 +110,9 @@ object SessionAndStreakManager {
         state: SessionAndStreakState,
         nowEpochSec: Long
     ): Pair<SessionAndStreakState, InterventionDecision> {
-        // Crucial invariant (S2): only increment timer while actively inside a Reels/Shorts/TikTok tab
-        if (!state.isCurrentlyInReelTab || state.currentTarget == null) {
-            return state to InterventionDecision.Allow
+        // Crucial invariant (S2): only increment timer while actively inside an enabled Reels/Shorts/TikTok tab
+        if (!state.isCurrentlyInReelTab || state.currentTarget == null || state.currentTarget !in state.enabledTargets) {
+            return state.copy(isCurrentlyInReelTab = false, currentTarget = null) to InterventionDecision.Allow
         }
 
         val nextSeconds = state.activeReelSecondsToday + 1
