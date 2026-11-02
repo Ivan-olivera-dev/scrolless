@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scrolless</string>
+    <string name="accessibility_service_label">Scrolless · Escudo Quirúrgico</string>
+    <string name="accessibility_service_description">Detecta únicamente pestañas de Reels, Shorts y TikTok para aplicar tu límite de tiempo local o pausa consciente. 100% offline: sin permiso de acceso a Internet.</string>
+</resources>
