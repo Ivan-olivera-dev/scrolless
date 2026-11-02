@@ -16,82 +16,93 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Color tokens directly adapted from playaperello/src/app/globals.css
+ * Warm mineral & botanical color palette derived from playaperello,
+ * expanded with tactile surface tiers for Scrolless's mobile architecture.
  */
 @Immutable
 data class PlayaPalette(
     val bgColor: Color,
+    val surfaceColor: Color,
+    val surfaceSubtle: Color,
     val textPrimary: Color,
     val textSecondary: Color,
     val borderColor: Color,
     val success: Color,
     val warning: Color,
     val danger: Color,
-    val hoverBg: Color,
     val isDark: Boolean
 )
 
 val LightPlayaPalette = PlayaPalette(
     bgColor = Color(0xFFFAF9F6),
+    surfaceColor = Color(0xFFF3F1EC),
+    surfaceSubtle = Color(0xFFECE9E2),
     textPrimary = Color(0xFF2C2C2C),
     textSecondary = Color(0xFF8A8A8A),
-    borderColor = Color(0xFFEAEAEA),
+    borderColor = Color(0xFFE6E3DC),
     success = Color(0xFF82A884),
     warning = Color(0xFFD6C07E),
     danger = Color(0xFFC47B7B),
-    hoverBg = Color(0xFFF0F0F0),
     isDark = false
 )
 
 val DarkPlayaPalette = PlayaPalette(
     bgColor = Color(0xFF151515),
+    surfaceColor = Color(0xFF1D1D1D),
+    surfaceSubtle = Color(0xFF252525),
     textPrimary = Color(0xFFE6E6E6),
     textSecondary = Color(0xFF707070),
     borderColor = Color(0xFF2A2A2A),
     success = Color(0xFF5D7A5E),
     warning = Color(0xFF9E8E5E),
     danger = Color(0xFF8A5757),
-    hoverBg = Color(0xFF222222),
     isDark = true
 )
 
 val LocalPlayaPalette = staticCompositionLocalOf { LightPlayaPalette }
 
 val PlayaTypography = Typography(
+    displayLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Light,
+        fontSize = 48.sp,
+        letterSpacing = (-2).sp
+    ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Light,
-        fontSize = 35.sp,
+        fontSize = 30.sp,
         letterSpacing = (-1).sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Light,
-        fontSize = 24.sp,
-        letterSpacing = (-0.5).sp
+        fontWeight = FontWeight.Normal,
+        fontSize = 20.sp,
+        letterSpacing = (-0.4).sp
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
-        fontSize = 13.5.sp,
-        letterSpacing = 1.sp
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        letterSpacing = 1.4.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 19.sp,
-        letterSpacing = (-0.5).sp
+        fontSize = 17.sp,
+        letterSpacing = (-0.3).sp
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Light,
-        fontSize = 15.sp,
-        lineHeight = 24.sp
+        fontSize = 14.sp,
+        lineHeight = 21.sp
     ),
     bodySmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Light,
-        fontSize = 12.5.sp
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 17.sp
     )
 )
 
@@ -104,7 +115,7 @@ fun PlayaTheme(
     val colorScheme = if (darkTheme) {
         darkColorScheme(
             background = palette.bgColor,
-            surface = palette.bgColor,
+            surface = palette.surfaceColor,
             onBackground = palette.textPrimary,
             onSurface = palette.textPrimary,
             primary = palette.textPrimary
@@ -112,7 +123,7 @@ fun PlayaTheme(
     } else {
         lightColorScheme(
             background = palette.bgColor,
-            surface = palette.bgColor,
+            surface = palette.surfaceColor,
             onBackground = palette.textPrimary,
             onSurface = palette.textPrimary,
             primary = palette.textPrimary
