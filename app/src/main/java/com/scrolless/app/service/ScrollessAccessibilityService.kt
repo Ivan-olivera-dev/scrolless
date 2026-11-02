@@ -1,14 +1,19 @@
 package com.scrolless.app.service
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.Intent
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.scrolless.app.core.DetectionEngine
 import com.scrolless.app.core.InterventionDecision
 import com.scrolless.app.core.SessionAndStreakManager
+import com.scrolless.app.core.ShortFormTarget
 import com.scrolless.app.core.WindowSnapshot
 import com.scrolless.app.data.LocalStore
 import com.scrolless.app.ui.InterruptionActivity
@@ -90,10 +95,36 @@ class ScrollessAccessibilityService : AccessibilityService() {
     fun bounceBackFromShortForm() {
         val updated = SessionAndStreakManager.onUserBouncedBack(store.loadState())
         store.saveState(updated)
-        performGlobalAction(GLOBAL_ACTION_HOME)
+        pauseActiveMediaPlayback()
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        tickHandler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }, 120L)
+    }
+
+    fun pauseActiveMediaPlayback() {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        try {
+            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                .setOnAudioFocusChangeListener { /* no-op */ }
+                .build()
+            audioManager.requestAudioFocus(focusRequest)
+        } catch (_: Throwable) {
+            // Audio focus failure ignored safely
+        }
+        try {
+            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+        } catch (_: Throwable) {
+            // Media key failure ignored safely
+        }
     }
 
     private fun launchInterruptionScreen(decision: InterventionDecision.ShowInterruption) {
+        pauseActiveMediaPlayback()
+        if (decision.target == ShortFormTarget.YOUTUBE_SHORTS) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
         val intent = Intent(this, InterruptionActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("target_name", decision.target.displayName)

@@ -159,8 +159,11 @@ fun InterruptionScreen(
                 .fillMaxWidth()
                 .padding(start = 22.dp, end = 22.dp, top = 44.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // Scrolless Architectural Brand Mark
+            ScrollessLogoMark(size = 28.dp)
+
             // Pill Tag
             Box(
                 modifier = Modifier

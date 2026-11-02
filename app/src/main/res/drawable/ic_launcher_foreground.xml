@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Upper open capsule arc (warm alabaster) -->
+    <path
+        android:strokeColor="#FAF9F6"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M41,47 V39 A13,13 0 0,1 67,39 V47" />
+
+    <!-- Lower open capsule arc (muted sage) -->
+    <path
+        android:strokeColor="#82A884"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M67,61 V69 A13,13 0 0,1 41,69 V61" />
+
+    <!-- Horizontal calm horizon line (breaks the infinite scroll) -->
+    <path
+        android:strokeColor="#FAF9F6"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,54 H74" />
+
+    <!-- Center focal dot (warm ochre/terracotta mindfulness center) -->
+    <path
+        android:fillColor="#D6C07E"
+        android:pathData="M54,50.2 a3.8,3.8 0 1,0 0,7.6 a3.8,3.8 0 1,0 0,-7.6z" />
+</vector>

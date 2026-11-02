@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.ProtectionMode
@@ -156,6 +158,102 @@ fun DashboardScreen(
 }
 
 @Composable
+fun ScrollessLogoMark(
+    modifier: Modifier = Modifier,
+    size: Dp = 28.dp
+) {
+    val palette = LocalPlayaPalette.current
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * 0.28f))
+            .background(palette.surfaceColor)
+            .border(1.dp, palette.borderColor, RoundedCornerShape(size * 0.28f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val scale = this.size.minDimension / 108f
+
+            // Hairline ring
+            drawCircle(
+                color = palette.borderColor,
+                radius = 36f * scale,
+                center = Offset(54f * scale, 54f * scale),
+                style = Stroke(width = 1f * scale)
+            )
+
+            // Upper open capsule arc: M41,47 V39 A13,13 0 0,1 67,39 V47
+            val upperPath = Path().apply {
+                moveTo(41f * scale, 47f * scale)
+                lineTo(41f * scale, 39f * scale)
+                arcTo(
+                    rect = Rect(
+                        left = 41f * scale,
+                        top = 26f * scale,
+                        right = 67f * scale,
+                        bottom = 52f * scale
+                    ),
+                    startAngleDegrees = 180f,
+                    sweepAngleDegrees = 180f,
+                    forceMoveTo = false
+                )
+                lineTo(67f * scale, 47f * scale)
+            }
+            drawPath(
+                path = upperPath,
+                color = palette.textPrimary,
+                style = Stroke(
+                    width = 3.2f * scale,
+                    cap = StrokeCap.Round
+                )
+            )
+
+            // Lower open capsule arc: M67,61 V69 A13,13 0 0,1 41,69 V61
+            val lowerPath = Path().apply {
+                moveTo(67f * scale, 61f * scale)
+                lineTo(67f * scale, 69f * scale)
+                arcTo(
+                    rect = Rect(
+                        left = 41f * scale,
+                        top = 56f * scale,
+                        right = 67f * scale,
+                        bottom = 82f * scale
+                    ),
+                    startAngleDegrees = 0f,
+                    sweepAngleDegrees = 180f,
+                    forceMoveTo = false
+                )
+                lineTo(41f * scale, 61f * scale)
+            }
+            drawPath(
+                path = lowerPath,
+                color = palette.success,
+                style = Stroke(
+                    width = 3.2f * scale,
+                    cap = StrokeCap.Round
+                )
+            )
+
+            // Horizontal calm horizon line: M34,54 H74
+            drawLine(
+                color = palette.textPrimary,
+                start = Offset(34f * scale, 54f * scale),
+                end = Offset(74f * scale, 54f * scale),
+                strokeWidth = 2.4f * scale,
+                cap = StrokeCap.Round
+            )
+
+            // Center focal dot at (54, 54) with radius 3.8
+            drawCircle(
+                color = palette.warning,
+                radius = 3.8f * scale,
+                center = Offset(54f * scale, 54f * scale)
+            )
+        }
+    }
+}
+
+@Composable
 private fun TopBar(
     isServiceActive: Boolean,
     isEs: Boolean,
@@ -176,6 +274,7 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            ScrollessLogoMark(size = 28.dp)
             Text(
                 text = "scrolless",
                 fontSize = 24.sp,
