@@ -33,8 +33,8 @@ data class SessionAndStreakState(
     val currentTarget: ShortFormTarget? = null,
     val interceptionsToday: Int = 0,
     val weeklyInterceptions: Int = 0,
-    val streakDays: Int = 1,
-    val streakShields: Int = 1,
+    val streakDays: Int = 0,
+    val streakShields: Int = 0,
     val mindfulAllowanceUntilEpochSec: Long = 0L,
     val enabledTargets: Set<ShortFormTarget> = ShortFormTarget.entries.toSet()
 ) {

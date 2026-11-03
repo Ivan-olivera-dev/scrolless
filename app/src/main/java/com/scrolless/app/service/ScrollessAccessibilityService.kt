@@ -32,6 +32,7 @@ class ScrollessAccessibilityService : AccessibilityService() {
     private lateinit var store: LocalStore
     private val detectionEngine = DetectionEngine()
     private val tickHandler = Handler(Looper.getMainLooper())
+    private var lastInterruptionLaunchMs: Long = 0L
 
     private val secondTicker = object : Runnable {
         override fun run() {
@@ -121,6 +122,10 @@ class ScrollessAccessibilityService : AccessibilityService() {
     }
 
     private fun launchInterruptionScreen(decision: InterventionDecision.ShowInterruption) {
+        val now = System.currentTimeMillis()
+        if (now - lastInterruptionLaunchMs < 900L) return
+        lastInterruptionLaunchMs = now
+
         pauseActiveMediaPlayback()
         if (decision.target == ShortFormTarget.YOUTUBE_SHORTS) {
             performGlobalAction(GLOBAL_ACTION_BACK)

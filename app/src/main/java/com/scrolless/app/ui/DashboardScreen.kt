@@ -1,5 +1,6 @@
 package com.scrolless.app.ui
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -9,8 +10,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,13 +26,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,6 +46,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
@@ -51,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -133,13 +137,18 @@ fun DashboardScreen(
             SectionHeader(
                 title = if (isEs) "PROTOCOLO DE INTERVENCIÓN" else "INTERVENTION PROTOCOL"
             )
+            val isCustomSelected = !(state.mode == ProtectionMode.MINDFUL_BUDGET && state.dailyLimitSeconds == 15 * 60) &&
+                !(state.mode == ProtectionMode.STRICT_BUDGET && state.dailyLimitSeconds == 5 * 60) &&
+                !(state.mode == ProtectionMode.SURGICAL_BLOCK || state.dailyLimitSeconds == 0)
+
             ModeSelectorStack(
-                selectedMode = state.mode,
+                state = state,
                 isEs = isEs,
                 onSelectMode = onSelectMode
             )
             CustomMinutesCard(
                 currentMinutes = state.dailyLimitSeconds / 60,
+                isCustomSelected = isCustomSelected,
                 isEs = isEs,
                 onApplyMinutes = onCustomMinutesApply
             )
@@ -271,6 +280,9 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -306,7 +318,8 @@ private fun TopBar(
                             if (isEs) "PAUSADO" else "PAUSED"
                         },
                         style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                        color = palette.textSecondary
+                        color = palette.textSecondary,
+                        maxLines = 1
                     )
                 }
             }
@@ -434,11 +447,18 @@ private fun TimeBudgetHeroCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text(
                     text = if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE",
                     style = MaterialTheme.typography.labelMedium,
-                    color = palette.textSecondary
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
@@ -447,7 +467,9 @@ private fun TimeBudgetHeroCard(
                         formatMinSec(state.remainingSecondsToday)
                     },
                     style = MaterialTheme.typography.displayLarge,
-                    color = palette.textPrimary
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
@@ -460,17 +482,19 @@ private fun TimeBudgetHeroCard(
                         }
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
+                    color = palette.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
             // Custom Architectural Radial Dial
             Box(
-                modifier = Modifier.size(108.dp),
+                modifier = Modifier.size(92.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    val strokeWidth = 5.dp.toPx()
+                    val strokeWidth = 4.5.dp.toPx()
                     val radius = (size.minDimension - strokeWidth * 2) / 2f
                     val centerOffset = Offset(size.width / 2f, size.height / 2f)
 
@@ -478,8 +502,8 @@ private fun TimeBudgetHeroCard(
                     val tickCount = 24
                     for (i in 0 until tickCount) {
                         val angleRad = Math.toRadians((i * (360.0 / tickCount)) - 90.0)
-                        val innerR = radius + 4.dp.toPx()
-                        val outerR = radius + 8.dp.toPx()
+                        val innerR = radius + 3.dp.toPx()
+                        val outerR = radius + 6.5.dp.toPx()
                         val start = Offset(
                             x = centerOffset.x + (innerR * cos(angleRad)).toFloat(),
                             y = centerOffset.y + (innerR * sin(angleRad)).toFloat()
@@ -492,7 +516,7 @@ private fun TimeBudgetHeroCard(
                             color = palette.borderColor,
                             start = start,
                             end = end,
-                            strokeWidth = 1.2.dp.toPx(),
+                            strokeWidth = 1.dp.toPx(),
                             cap = StrokeCap.Round
                         )
                     }
@@ -530,7 +554,7 @@ private fun TimeBudgetHeroCard(
                     }
                     Text(
                         text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) "0%" else "$pctRemaining%",
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Normal,
                         color = palette.textPrimary
                     )
@@ -552,8 +576,13 @@ private fun TimeBudgetHeroCard(
         ) {
             Text(
                 text = if (isEs) "El reloj se pausa al salir a DMs o videos largos" else "Timer pauses immediately in DMs or long videos",
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary
+                color = palette.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Box(
                 modifier = Modifier
@@ -594,34 +623,43 @@ private fun StreakAndMetricsBento(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Text(
                         text = if (isEs) "CONSTANCIA DIARIA" else "DAILY CONSISTENCY",
                         style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary
+                        color = palette.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Row(
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "${state.streakDays}",
-                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 36.sp),
-                            color = palette.textPrimary
-                        )
-                        Text(
-                            text = if (isEs) "días cumpliendo tu margen" else "days within your budget",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.textSecondary,
-                            modifier = Modifier.padding(bottom = 5.dp)
-                        )
-                    }
+                    Text(
+                        text = if (isEs) {
+                            if (state.streakDays == 1) "1 día" else "${state.streakDays} días"
+                        } else {
+                            if (state.streakDays == 1) "1 day" else "${state.streakDays} days"
+                        },
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = palette.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (isEs) "cumpliendo tu margen diario" else "meeting your daily budget",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
-                // Shield tokens (up to 3 geometric shields)
+                // Shield tokens (compact pill with ${state.streakShields}/3)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(palette.bgColor)
@@ -637,8 +675,8 @@ private fun StreakAndMetricsBento(
                     }
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        text = if (isEs) "${state.streakShields} escudos" else "${state.streakShields} shields",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "${state.streakShields}/3",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                         color = palette.textSecondary
                     )
                 }
@@ -683,19 +721,21 @@ private fun StreakAndMetricsBento(
 
         // 2-Column Bento Row: Impulses Stopped & Recovered Time
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Max),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             BentoMetricTile(
                 modifier = Modifier.weight(1f),
-                eyebrow = if (isEs) "IMPULSOS FRENADOS" else "IMPULSES STOPPED",
+                eyebrow = if (isEs) "IMPULSOS HOY" else "IMPULSES TODAY",
                 bigValue = "${state.interceptionsToday}",
                 caption = if (isEs) "aperturas automáticas cortadas hoy" else "automatic opens caught today",
                 accentDotColor = palette.warning
             )
             BentoMetricTile(
                 modifier = Modifier.weight(1f),
-                eyebrow = if (isEs) "TIEMPO RECUPERADO" else "TIME RECOVERED",
+                eyebrow = if (isEs) "RECUPERADO (7D)" else "RECOVERED (7D)",
                 bigValue = "${SessionAndStreakManager.estimateSavedHours(state.weeklyInterceptions)} h",
                 caption = if (isEs) "estimado en los últimos 7 días" else "estimated over the last 7 days",
                 accentDotColor = palette.success
@@ -706,7 +746,7 @@ private fun StreakAndMetricsBento(
 
 @Composable
 private fun BentoMetricTile(
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
     eyebrow: String,
     bigValue: String,
     caption: String,
@@ -715,49 +755,65 @@ private fun BentoMetricTile(
     val palette = LocalPlayaPalette.current
     Column(
         modifier = modifier
+            .fillMaxHeight()
             .clip(RoundedCornerShape(20.dp))
             .background(palette.surfaceColor)
             .border(1.dp, palette.borderColor, RoundedCornerShape(20.dp))
             .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = eyebrow,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 6.dp),
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(accentDotColor)
+                )
+            }
             Text(
-                text = eyebrow,
-                style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                color = palette.textSecondary
-            )
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(accentDotColor)
+                text = bigValue,
+                style = MaterialTheme.typography.headlineLarge,
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         Text(
-            text = bigValue,
-            style = MaterialTheme.typography.headlineLarge,
-            color = palette.textPrimary
-        )
-        Text(
             text = caption,
             style = MaterialTheme.typography.bodySmall,
-            color = palette.textSecondary
+            color = palette.textSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
 
 @Composable
 private fun ModeSelectorStack(
-    selectedMode: ProtectionMode,
+    state: SessionAndStreakState,
     isEs: Boolean,
     onSelectMode: (ProtectionMode) -> Unit
 ) {
     val palette = LocalPlayaPalette.current
+    val is15mSelected = state.mode == ProtectionMode.MINDFUL_BUDGET && state.dailyLimitSeconds == 15 * 60
+    val is5mSelected = state.mode == ProtectionMode.STRICT_BUDGET && state.dailyLimitSeconds == 5 * 60
+    val is0mSelected = state.mode == ProtectionMode.SURGICAL_BLOCK || state.dailyLimitSeconds == 0
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ModeOptionCard(
             title = if (isEs) "Pausa Consciente · 15 min" else "Mindful Budget · 15 min",
@@ -768,7 +824,7 @@ private fun ModeSelectorStack(
             },
             badge = "15M",
             accentColor = palette.success,
-            selected = selectedMode == ProtectionMode.MINDFUL_BUDGET,
+            selected = is15mSelected,
             onClick = { onSelectMode(ProtectionMode.MINDFUL_BUDGET) }
         )
         ModeOptionCard(
@@ -780,7 +836,7 @@ private fun ModeSelectorStack(
             },
             badge = "5M",
             accentColor = palette.warning,
-            selected = selectedMode == ProtectionMode.STRICT_BUDGET,
+            selected = is5mSelected,
             onClick = { onSelectMode(ProtectionMode.STRICT_BUDGET) }
         )
         ModeOptionCard(
@@ -792,7 +848,7 @@ private fun ModeSelectorStack(
             },
             badge = "0M",
             accentColor = palette.danger,
-            selected = selectedMode == ProtectionMode.SURGICAL_BLOCK,
+            selected = is0mSelected,
             onClick = { onSelectMode(ProtectionMode.SURGICAL_BLOCK) }
         )
     }
@@ -837,12 +893,16 @@ private fun ModeOptionCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                color = palette.textPrimary
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary
+                color = palette.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
         Box(
@@ -859,7 +919,8 @@ private fun ModeOptionCard(
             Text(
                 text = badge,
                 style = MaterialTheme.typography.labelMedium,
-                color = if (selected) accentColor else palette.textSecondary
+                color = if (selected) accentColor else palette.textSecondary,
+                maxLines = 1
             )
         }
     }
@@ -868,6 +929,7 @@ private fun ModeOptionCard(
 @Composable
 private fun CustomMinutesCard(
     currentMinutes: Int,
+    isCustomSelected: Boolean,
     isEs: Boolean,
     onApplyMinutes: (Int) -> Unit
 ) {
@@ -879,64 +941,84 @@ private fun CustomMinutesCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(palette.surfaceColor)
-            .border(1.dp, palette.borderColor, RoundedCornerShape(18.dp))
+            .border(
+                1.dp,
+                if (isCustomSelected) palette.success else palette.borderColor,
+                RoundedCornerShape(18.dp)
+            )
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
                 text = if (isEs) "Límite personalizado" else "Custom daily limit",
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = palette.textPrimary
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = if (isEs) "Minutos al día (0 = bloqueo total)" else "Minutes/day (0 = zero-scroll)",
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary
+                color = palette.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
-        OutlinedTextField(
-            value = inputText,
-            onValueChange = { newValue ->
-                val filtered = newValue.filter { it.isDigit() }.take(3)
-                inputText = filtered
-            },
-            modifier = Modifier.width(76.dp),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-                color = palette.textPrimary
-            ),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number,
-                imeAction = ImeAction.Done
-            ),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    val mins = inputText.toIntOrNull()
-                    if (mins != null && mins in 0..300) {
-                        onApplyMinutes(mins)
+        Box(
+            modifier = Modifier
+                .width(68.dp)
+                .height(42.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(palette.bgColor)
+                .border(
+                    1.dp,
+                    if (isCustomSelected) palette.success else palette.borderColor,
+                    RoundedCornerShape(10.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            BasicTextField(
+                value = inputText,
+                onValueChange = { newValue ->
+                    val filtered = newValue.filter { it.isDigit() }.take(3)
+                    inputText = filtered
+                },
+                singleLine = true,
+                cursorBrush = SolidColor(palette.textPrimary),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    color = palette.textPrimary
+                ),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        val mins = inputText.toIntOrNull()
+                        if (mins != null && mins in 0..300) {
+                            onApplyMinutes(mins)
+                        }
                     }
-                }
-            ),
-            shape = RoundedCornerShape(10.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = palette.textPrimary,
-                unfocusedBorderColor = palette.borderColor,
-                focusedContainerColor = palette.bgColor,
-                unfocusedContainerColor = palette.bgColor
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp)
             )
-        )
+        }
 
         Box(
             modifier = Modifier
-                .height(44.dp)
+                .height(42.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(palette.textPrimary)
                 .clickable {
@@ -953,7 +1035,8 @@ private fun CustomMinutesCard(
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontWeight = FontWeight.Medium,
                     color = palette.bgColor
-                )
+                ),
+                maxLines = 1
             )
         }
     }
@@ -977,27 +1060,21 @@ private fun SurgicalTargetsPanel(
         SurgicalTargetRow(
             appTitle = "Instagram Reels",
             allowedScope = if (isEs) "DMs, historias y feed libres" else "DMs, stories & feed unrestricted",
-            blockedChip = "Reels Tab",
             enabled = ShortFormTarget.INSTAGRAM_REELS in enabledTargets,
-            isEs = isEs,
             onToggle = { onToggleTarget(ShortFormTarget.INSTAGRAM_REELS) }
         )
         HorizontalDivider(thickness = 1.dp, color = palette.borderColor)
         SurgicalTargetRow(
             appTitle = "YouTube Shorts",
             allowedScope = if (isEs) "Videos largos y búsquedas libres" else "Long-form videos & search unrestricted",
-            blockedChip = "Shorts Player",
             enabled = ShortFormTarget.YOUTUBE_SHORTS in enabledTargets,
-            isEs = isEs,
             onToggle = { onToggleTarget(ShortFormTarget.YOUTUBE_SHORTS) }
         )
         HorizontalDivider(thickness = 1.dp, color = palette.borderColor)
         SurgicalTargetRow(
             appTitle = "TikTok",
             allowedScope = if (isEs) "Intervención en toda la aplicación" else "Full application short-form scope",
-            blockedChip = "Full App",
             enabled = ShortFormTarget.TIKTOK in enabledTargets,
-            isEs = isEs,
             onToggle = { onToggleTarget(ShortFormTarget.TIKTOK) }
         )
     }
@@ -1007,12 +1084,16 @@ private fun SurgicalTargetsPanel(
 private fun SurgicalTargetRow(
     appTitle: String,
     allowedScope: String,
-    blockedChip: String,
     enabled: Boolean,
-    isEs: Boolean,
     onToggle: () -> Unit
 ) {
     val palette = LocalPlayaPalette.current
+    val thumbOffset by animateDpAsState(
+        targetValue = if (enabled) 23.dp else 3.dp,
+        animationSpec = tween(durationMillis = 200),
+        label = "switchThumb"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1022,72 +1103,47 @@ private fun SurgicalTargetRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = appTitle,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                    color = palette.textPrimary
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(palette.bgColor)
-                        .border(1.dp, palette.borderColor, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = blockedChip,
-                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
-                        color = palette.textSecondary
-                    )
-                }
-            }
+            Text(
+                text = appTitle,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium),
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             Text(
                 text = allowedScope,
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary
+                color = palette.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
         Box(
             modifier = Modifier
+                .width(46.dp)
+                .height(26.dp)
                 .clip(RoundedCornerShape(999.dp))
-                .background(if (enabled) palette.success.copy(alpha = 0.16f) else palette.bgColor)
+                .background(if (enabled) palette.success else palette.bgColor)
                 .border(
                     width = 1.dp,
                     color = if (enabled) palette.success else palette.borderColor,
                     shape = RoundedCornerShape(999.dp)
-                )
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                ),
+            contentAlignment = Alignment.CenterStart
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (enabled) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(palette.success)
-                    )
-                }
-                Text(
-                    text = if (enabled) {
-                        if (isEs) "ACTIVO" else "ON"
-                    } else {
-                        if (isEs) "DESACTIVADO" else "OFF"
-                    },
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                    color = if (enabled) palette.success else palette.textSecondary
-                )
-            }
+            Box(
+                modifier = Modifier
+                    .padding(start = thumbOffset)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(if (enabled) palette.bgColor else palette.textSecondary)
+            )
         }
     }
 }

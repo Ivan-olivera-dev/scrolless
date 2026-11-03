@@ -17,6 +17,30 @@ class CoreEngineTest {
     private val engine = DetectionEngine()
 
     @Test
+    fun `default SessionAndStreakState starts with zero mocked data`() {
+        val defaultState = SessionAndStreakState()
+        assertEquals(0, defaultState.streakDays)
+        assertEquals(0, defaultState.streakShields)
+        assertEquals(0, defaultState.interceptionsToday)
+        assertEquals(0, defaultState.weeklyInterceptions)
+        assertEquals(0.0, SessionAndStreakManager.estimateSavedHours(defaultState.weeklyInterceptions), 0.01)
+    }
+
+    @Test
+    fun `rollover from fresh zero state achieves day 1 streak`() {
+        val fresh = SessionAndStreakState(
+            dailyLimitSeconds = 600,
+            activeReelSecondsToday = 150,
+            streakDays = 0,
+            streakShields = 0
+        )
+        val next = SessionAndStreakManager.onDayRollover(fresh)
+        assertEquals(1, next.streakDays)
+        assertEquals(0, next.streakShields)
+        assertEquals(0, next.activeReelSecondsToday)
+    }
+
+    @Test
     fun `detects Instagram Reels tab but ignores Instagram DMs and normal feed`() {
         val dmSnapshot = WindowSnapshot(
             packageName = "com.instagram.android",

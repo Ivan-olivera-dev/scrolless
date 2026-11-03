@@ -65,13 +65,15 @@ val PlayaTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Light,
-        fontSize = 48.sp,
-        letterSpacing = (-2).sp
+        fontSize = 36.sp,
+        lineHeight = 40.sp,
+        letterSpacing = (-1.2).sp
     ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Light,
-        fontSize = 30.sp,
+        fontSize = 26.sp,
+        lineHeight = 32.sp,
         letterSpacing = (-1).sp
     ),
     titleMedium = TextStyle(
@@ -83,8 +85,8 @@ val PlayaTypography = Typography(
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        letterSpacing = 1.4.sp
+        fontSize = 10.5.sp,
+        letterSpacing = 1.0.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,

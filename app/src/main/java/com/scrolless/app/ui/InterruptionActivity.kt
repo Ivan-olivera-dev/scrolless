@@ -27,8 +27,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.InterruptionReason
@@ -157,6 +160,7 @@ fun InterruptionScreen(
             modifier = Modifier
                 .widthIn(max = 420.dp)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 22.dp, end = 22.dp, top = 44.dp, bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
@@ -311,28 +315,43 @@ fun InterruptionScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (isEs) "RACHA ACTUAL" else "CURRENT STREAK",
                         style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
-                        color = palette.textSecondary
+                        color = palette.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (isEs) "$streakDays días" else "$streakDays days",
+                        text = if (isEs) {
+                            if (streakDays == 1) "1 día" else "$streakDays días"
+                        } else {
+                            if (streakDays == 1) "1 day" else "$streakDays days"
+                        },
                         style = MaterialTheme.typography.bodyLarge,
-                        color = palette.textPrimary
+                        color = palette.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Column(horizontalAlignment = Alignment.End) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End
+                ) {
                     Text(
                         text = if (isEs) "MARGEN HOY" else "LEFT TODAY",
                         style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
-                        color = palette.textSecondary
+                        color = palette.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = formatMinSec(remainingSec),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = ringColor
+                        color = ringColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -346,7 +365,8 @@ fun InterruptionScreen(
                     .height(54.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(palette.textPrimary)
-                    .clickable { onExitShortForm() },
+                    .clickable { onExitShortForm() }
+                    .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -355,7 +375,9 @@ fun InterruptionScreen(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium
                     ),
-                    color = palette.bgColor
+                    color = palette.bgColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -378,13 +400,16 @@ fun InterruptionScreen(
                             color = if (countdown == 0) palette.borderColor else palette.borderColor.copy(alpha = 0.4f),
                             shape = RoundedCornerShape(14.dp)
                         )
-                        .clickable(enabled = countdown == 0) { onContinueMindfully() },
+                        .clickable(enabled = countdown == 0) { onContinueMindfully() }
+                        .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = unlockLabel,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (countdown == 0) palette.textPrimary else palette.textSecondary.copy(alpha = 0.5f)
+                        color = if (countdown == 0) palette.textPrimary else palette.textSecondary.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

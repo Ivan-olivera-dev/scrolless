@@ -1,6 +1,7 @@
 package com.scrolless.app.ui
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -20,6 +21,10 @@ class MainActivity : ComponentActivity() {
     private var isServiceActive by mutableStateOf(false)
     private var isDark by mutableStateOf(false)
     private var lang by mutableStateOf("es")
+
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        refreshState()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,9 +89,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        store.registerListener(prefsListener)
+        refreshState()
+    }
+
     override fun onResume() {
         super.onResume()
         refreshState()
+    }
+
+    override fun onStop() {
+        store.unregisterListener(prefsListener)
+        super.onStop()
     }
 
     private fun refreshState() {

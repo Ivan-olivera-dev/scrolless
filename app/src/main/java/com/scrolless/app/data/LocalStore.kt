@@ -1,6 +1,7 @@
 package com.scrolless.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.scrolless.app.core.ProtectionMode
 import com.scrolless.app.core.SessionAndStreakManager
 import com.scrolless.app.core.SessionAndStreakState
@@ -11,6 +12,17 @@ class LocalStore(context: Context) {
     private val prefs = context.getSharedPreferences("scrolless_local_store", Context.MODE_PRIVATE)
 
     fun loadState(): SessionAndStreakState {
+        if (prefs.getInt("store_schema_version", 1) < 2) {
+            prefs.edit()
+                .putInt("store_schema_version", 2)
+                .putInt("weekly_interceptions", 0)
+                .putInt("streak_days", 0)
+                .putInt("streak_shields", 0)
+                .putInt("interceptions_today", 0)
+                .putInt("active_reel_sec_today", 0)
+                .apply()
+        }
+
         val todayIso = LocalDate.now().toString()
         val lastDate = prefs.getString("last_date_iso", todayIso) ?: todayIso
 
@@ -35,9 +47,9 @@ class LocalStore(context: Context) {
             dailyLimitSeconds = prefs.getInt("daily_limit_sec", mode.defaultDailyLimitSeconds),
             activeReelSecondsToday = prefs.getInt("active_reel_sec_today", 0),
             interceptionsToday = prefs.getInt("interceptions_today", 0),
-            weeklyInterceptions = prefs.getInt("weekly_interceptions", 14),
-            streakDays = prefs.getInt("streak_days", 4),
-            streakShields = prefs.getInt("streak_shields", 1),
+            weeklyInterceptions = prefs.getInt("weekly_interceptions", 0),
+            streakDays = prefs.getInt("streak_days", 0),
+            streakShields = prefs.getInt("streak_shields", 0),
             mindfulAllowanceUntilEpochSec = prefs.getLong("mindful_until_epoch", 0L),
             enabledTargets = enabledTargets
         )
@@ -53,6 +65,7 @@ class LocalStore(context: Context) {
     fun saveState(state: SessionAndStreakState) {
         val targetsString = state.enabledTargets.joinToString(",") { it.name }
         prefs.edit()
+            .putInt("store_schema_version", 2)
             .putString("protection_mode", state.mode.name)
             .putInt("daily_limit_sec", state.dailyLimitSeconds)
             .putInt("active_reel_sec_today", state.activeReelSecondsToday)
@@ -64,6 +77,14 @@ class LocalStore(context: Context) {
             .putString("enabled_targets", targetsString)
             .putString("last_date_iso", LocalDate.now().toString())
             .apply()
+    }
+
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     fun isDarkTheme(defaultDark: Boolean): Boolean = prefs.getBoolean("dark_theme", defaultDark)
