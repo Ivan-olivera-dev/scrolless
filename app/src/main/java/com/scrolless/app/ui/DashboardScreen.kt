@@ -453,33 +453,17 @@ private fun TimeBudgetHeroCard(
                     .padding(end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(palette.danger.copy(alpha = 0.16f))
-                                .border(1.dp, palette.danger.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = if (isEs) "BLOQUEO TOTAL" else "ZERO SCROLL",
-                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
-                                color = palette.danger
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
+                        if (isEs) "MODO BLOQUEO TOTAL" else "ZERO SCROLL MODE"
+                    } else {
+                        if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (state.mode == ProtectionMode.SURGICAL_BLOCK) palette.danger else palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     text = formatMinSec(state.remainingSecondsToday),
                     style = MaterialTheme.typography.displayLarge,
