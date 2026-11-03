@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.InterruptionReason
 import com.scrolless.app.core.SessionAndStreakManager
+import com.scrolless.app.core.ShortFormTarget
 import com.scrolless.app.data.LocalStore
 import com.scrolless.app.service.ScrollessAccessibilityService
 import kotlinx.coroutines.delay
@@ -64,11 +65,23 @@ class InterruptionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        renderFromIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        renderFromIntent(intent)
+    }
+
+    private fun renderFromIntent(currentIntent: Intent) {
         val store = LocalStore(applicationContext)
-        val targetName = intent.getStringExtra("target_name") ?: "Reels / Shorts"
-        val reasonName = intent.getStringExtra("reason_name") ?: InterruptionReason.MINDFUL_PAUSE_ON_ENTRY.name
-        val canContinue = intent.getBooleanExtra("can_continue", false)
-        val remainingSec = intent.getIntExtra("remaining_sec", 0)
+        val targetId = currentIntent.getStringExtra("target_id")
+        val target = targetId?.let { runCatching { ShortFormTarget.valueOf(it) }.getOrNull() }
+        val targetName = currentIntent.getStringExtra("target_name") ?: target?.displayName ?: "Reels / Shorts"
+        val reasonName = currentIntent.getStringExtra("reason_name") ?: InterruptionReason.MINDFUL_PAUSE_ON_ENTRY.name
+        val canContinue = currentIntent.getBooleanExtra("can_continue", false)
+        val remainingSec = currentIntent.getIntExtra("remaining_sec", 0)
         val reason = runCatching { InterruptionReason.valueOf(reasonName) }
             .getOrDefault(InterruptionReason.MINDFUL_PAUSE_ON_ENTRY)
 
@@ -97,7 +110,12 @@ class InterruptionActivity : ComponentActivity() {
                     },
                     onContinueMindfully = {
                         val nowSec = System.currentTimeMillis() / 1000L
-                        val updated = SessionAndStreakManager.grantMindfulContinue(store.loadState(), nowSec)
+                        val currentState = store.loadState()
+                        val updated = SessionAndStreakManager.grantMindfulContinue(
+                            state = currentState,
+                            nowEpochSec = nowSec,
+                            target = target ?: currentState.currentTarget
+                        )
                         store.saveState(updated)
                         finish()
                     }
@@ -120,9 +138,10 @@ fun InterruptionScreen(
     onContinueMindfully: () -> Unit
 ) {
     val palette = LocalPlayaPalette.current
-    var countdown by remember { mutableIntStateOf(10) }
+    var countdown by remember(targetName, reason, canContinue) { mutableIntStateOf(10) }
 
-    LaunchedEffect(canContinue) {
+    LaunchedEffect(targetName, reason, canContinue) {
+        countdown = 10
         if (canContinue) {
             while (countdown > 0) {
                 delay(1000L)

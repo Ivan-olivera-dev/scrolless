@@ -29,7 +29,9 @@ class DetectionEngine(
     companion object {
         val TIKTOK_PACKAGES = setOf(
             "com.zhiliaoapp.musically",
-            "com.ss.android.ugc.trill"
+            "com.ss.android.ugc.trill",
+            "com.zhiliaoapp.musically.go",
+            "com.ss.android.ugc.aweme"
         )
 
         val INSTAGRAM_REEL_VIEW_IDS = setOf(
@@ -62,10 +64,15 @@ class DetectionEngine(
         )
 
         private val YOUTUBE_SHORTS_ID_SUBSTRINGS = listOf(
+            ":id/reel_",
             "reel_player",
             "reel_recycler",
             "reel_watch",
-            "shorts_"
+            "shorts_",
+            "reel_time_bar",
+            "reel_progress",
+            "reel_rhs",
+            "reel_dyn"
         )
     }
 
@@ -138,6 +145,11 @@ class DetectionEngine(
         }
 
         if (pkg == "com.google.android.youtube") {
+            val hasYoutubeNormalWatchPlayer = snapshot.viewIds.any { id ->
+                val lower = id.lowercase()
+                lower.contains("watch_player") || lower.contains("player_fragment")
+            }
+
             val matchedId = snapshot.viewIds.firstOrNull { id ->
                 val lower = id.lowercase()
                 id in YOUTUBE_SHORTS_VIEW_IDS ||
@@ -164,9 +176,75 @@ class DetectionEngine(
                 )
             }
 
+            if (!hasYoutubeNormalWatchPlayer) {
+                val matchedDesc = snapshot.contentDescriptions.firstOrNull { desc ->
+                    val lower = desc.lowercase()
+                    lower.contains("remezclar este short") ||
+                        lower.contains("remix this short") ||
+                        lower.contains("usar este sonido") ||
+                        lower.contains("use this sound") ||
+                        lower.contains("reproductor de shorts") ||
+                        lower.contains("shorts player")
+                }
+                if (matchedDesc != null) {
+                    return DetectionResult(
+                        isShortForm = true,
+                        target = ShortFormTarget.YOUTUBE_SHORTS,
+                        matchedSignal = "contentDesc:$matchedDesc"
+                    )
+                }
+            }
+
             return DetectionResult(isShortForm = false)
         }
 
         return DetectionResult(isShortForm = false)
+    }
+
+    fun isExplicitNonShortFormInTargetApp(snapshot: WindowSnapshot): Boolean {
+        if (snapshot.packageName == "com.instagram.android") {
+            val hasSafeFeedOrDmId = snapshot.viewIds.any { id ->
+                val lower = id.lowercase()
+                lower.contains("direct_thread") ||
+                    lower.contains("row_inbox") ||
+                    lower.contains("message_list") ||
+                    lower.contains("feed_timeline") ||
+                    lower.contains("main_feed") ||
+                    id in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS
+            }
+            if (hasSafeFeedOrDmId) return true
+
+            val hasNonReelsTabSelected = snapshot.selectedNodeLabels.any { label ->
+                val lower = label.lowercase().trim()
+                lower.contains("home") || lower.contains("inicio") ||
+                    lower.contains("search") || lower.contains("buscar") ||
+                    lower.contains("explorar") || lower.contains("explore") ||
+                    lower.contains("profile") || lower.contains("perfil")
+            }
+            if (hasNonReelsTabSelected) return true
+
+            return false
+        }
+
+        if (snapshot.packageName == "com.google.android.youtube") {
+            val hasNormalPlayerId = snapshot.viewIds.any { id ->
+                val lower = id.lowercase()
+                lower.contains("watch_player") || lower.contains("player_fragment")
+            }
+            if (hasNormalPlayerId) return true
+
+            val hasNonShortsTabSelected = snapshot.selectedNodeLabels.any { label ->
+                val lower = label.lowercase().trim()
+                lower.contains("home") || lower.contains("inicio") ||
+                    lower.contains("subscriptions") || lower.contains("suscripciones") ||
+                    lower.contains("you") || lower.contains("tú") ||
+                    lower.contains("biblioteca") || lower.contains("library")
+            }
+            if (hasNonShortsTabSelected) return true
+
+            return false
+        }
+
+        return false
     }
 }

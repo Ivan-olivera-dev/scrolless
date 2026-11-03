@@ -31,6 +31,7 @@ data class SessionAndStreakState(
     val activeReelSecondsToday: Int = 0,
     val isCurrentlyInReelTab: Boolean = false,
     val currentTarget: ShortFormTarget? = null,
+    val mindfulAllowanceTarget: ShortFormTarget? = null,
     val interceptionsToday: Int = 0,
     val weeklyInterceptions: Int = 0,
     val streakDays: Int = 0,
@@ -63,19 +64,23 @@ object SessionAndStreakManager {
             // Immediately pause timer when user returns to normal feed, DMs, long-form video, or if target is disabled
             return state.copy(
                 isCurrentlyInReelTab = false,
-                currentTarget = null
+                currentTarget = null,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
             ) to InterventionDecision.Allow
         }
 
-        val enteringNewSession = !state.isCurrentlyInReelTab || state.currentTarget != detection.target
-        val updatedEntryState = state.copy(
-            isCurrentlyInReelTab = true,
-            currentTarget = detection.target
-        )
+        val hasValidPass = state.mindfulAllowanceTarget == detection.target && nowEpochSec < state.mindfulAllowanceUntilEpochSec
+        val enteringNewSession = state.currentTarget != detection.target || state.isCurrentlyInReelTab
 
         if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
-            val bumped = if (enteringNewSession) bumpInterception(updatedEntryState) else updatedEntryState
-            return bumped to InterventionDecision.ShowInterruption(
+            val bumped = if (enteringNewSession) bumpInterception(state) else state
+            return bumped.copy(
+                isCurrentlyInReelTab = false,
+                currentTarget = detection.target,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
+            ) to InterventionDecision.ShowInterruption(
                 target = detection.target,
                 reason = InterruptionReason.SURGICAL_ZERO_TOLERANCE,
                 canContinueAfterPause = false,
@@ -84,8 +89,13 @@ object SessionAndStreakManager {
         }
 
         if (state.activeReelSecondsToday >= state.dailyLimitSeconds) {
-            val bumped = if (enteringNewSession) bumpInterception(updatedEntryState) else updatedEntryState
-            return bumped to InterventionDecision.ShowInterruption(
+            val bumped = if (enteringNewSession) bumpInterception(state) else state
+            return bumped.copy(
+                isCurrentlyInReelTab = false,
+                currentTarget = detection.target,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
+            ) to InterventionDecision.ShowInterruption(
                 target = detection.target,
                 reason = InterruptionReason.DAILY_LIMIT_EXHAUSTED,
                 canContinueAfterPause = false,
@@ -93,9 +103,14 @@ object SessionAndStreakManager {
             )
         }
 
-        if (nowEpochSec >= state.mindfulAllowanceUntilEpochSec) {
-            val bumped = if (enteringNewSession) bumpInterception(updatedEntryState) else updatedEntryState
-            return bumped to InterventionDecision.ShowInterruption(
+        if (!hasValidPass) {
+            val bumped = if (enteringNewSession) bumpInterception(state) else state
+            return bumped.copy(
+                isCurrentlyInReelTab = false,
+                currentTarget = detection.target,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
+            ) to InterventionDecision.ShowInterruption(
                 target = detection.target,
                 reason = InterruptionReason.MINDFUL_PAUSE_ON_ENTRY,
                 canContinueAfterPause = true,
@@ -103,7 +118,10 @@ object SessionAndStreakManager {
             )
         }
 
-        return updatedEntryState to InterventionDecision.Allow
+        return state.copy(
+            isCurrentlyInReelTab = true,
+            currentTarget = detection.target
+        ) to InterventionDecision.Allow
     }
 
     fun onActiveSecondTick(
@@ -112,14 +130,23 @@ object SessionAndStreakManager {
     ): Pair<SessionAndStreakState, InterventionDecision> {
         // Crucial invariant (S2): only increment timer while actively inside an enabled Reels/Shorts/TikTok tab
         if (!state.isCurrentlyInReelTab || state.currentTarget == null || state.currentTarget !in state.enabledTargets) {
-            return state.copy(isCurrentlyInReelTab = false, currentTarget = null) to InterventionDecision.Allow
+            return state.copy(
+                isCurrentlyInReelTab = false,
+                currentTarget = null,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
+            ) to InterventionDecision.Allow
         }
 
         val nextSeconds = state.activeReelSecondsToday + 1
         val nextState = state.copy(activeReelSecondsToday = nextSeconds)
 
         if (state.mode == ProtectionMode.SURGICAL_BLOCK || nextSeconds >= state.dailyLimitSeconds) {
-            return nextState to InterventionDecision.ShowInterruption(
+            return nextState.copy(
+                isCurrentlyInReelTab = false,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
+            ) to InterventionDecision.ShowInterruption(
                 target = state.currentTarget,
                 reason = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
                     InterruptionReason.SURGICAL_ZERO_TOLERANCE
@@ -132,7 +159,11 @@ object SessionAndStreakManager {
         }
 
         if (nowEpochSec >= state.mindfulAllowanceUntilEpochSec) {
-            return nextState to InterventionDecision.ShowInterruption(
+            return nextState.copy(
+                isCurrentlyInReelTab = false,
+                mindfulAllowanceTarget = null,
+                mindfulAllowanceUntilEpochSec = 0L
+            ) to InterventionDecision.ShowInterruption(
                 target = state.currentTarget,
                 reason = InterruptionReason.MINDFUL_PAUSE_ON_ENTRY,
                 canContinueAfterPause = true,
@@ -145,9 +176,13 @@ object SessionAndStreakManager {
 
     fun grantMindfulContinue(
         state: SessionAndStreakState,
-        nowEpochSec: Long
+        nowEpochSec: Long,
+        target: ShortFormTarget? = state.currentTarget
     ): SessionAndStreakState {
         return state.copy(
+            isCurrentlyInReelTab = target != null,
+            currentTarget = target,
+            mindfulAllowanceTarget = target,
             mindfulAllowanceUntilEpochSec = nowEpochSec + MINDFUL_ALLOWANCE_WINDOW_SEC
         )
     }
@@ -156,6 +191,7 @@ object SessionAndStreakManager {
         return state.copy(
             isCurrentlyInReelTab = false,
             currentTarget = null,
+            mindfulAllowanceTarget = null,
             mindfulAllowanceUntilEpochSec = 0L
         )
     }
@@ -185,6 +221,7 @@ object SessionAndStreakManager {
             interceptionsToday = 0,
             isCurrentlyInReelTab = false,
             currentTarget = null,
+            mindfulAllowanceTarget = null,
             streakDays = nextStreak,
             streakShields = nextShields,
             mindfulAllowanceUntilEpochSec = 0L

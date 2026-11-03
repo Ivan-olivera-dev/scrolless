@@ -7,6 +7,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -33,10 +34,20 @@ class ScrollessAccessibilityService : AccessibilityService() {
     private val detectionEngine = DetectionEngine()
     private val tickHandler = Handler(Looper.getMainLooper())
     private var lastInterruptionLaunchMs: Long = 0L
+    private val ignoredSystemPackages = setOf("com.android.systemui", "android")
 
     private val secondTicker = object : Runnable {
         override fun run() {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
             val currentState = store.loadState()
+            if (powerManager != null && !powerManager.isInteractive) {
+                if (currentState.isCurrentlyInReelTab || currentState.mindfulAllowanceTarget != null) {
+                    store.saveState(SessionAndStreakManager.onUserBouncedBack(currentState))
+                }
+                tickHandler.postDelayed(this, 1000L)
+                return
+            }
+
             if (currentState.isCurrentlyInReelTab) {
                 val nowSec = System.currentTimeMillis() / 1000L
                 val (updated, decision) = SessionAndStreakManager.onActiveSecondTick(currentState, nowSec)
@@ -61,6 +72,26 @@ class ScrollessAccessibilityService : AccessibilityService() {
         val source = event?.source
         val pkg = event?.packageName?.toString() ?: root?.packageName?.toString() ?: source?.packageName?.toString() ?: return
         if (pkg == applicationContext.packageName) return
+        val lowerPkg = pkg.lowercase()
+        if (pkg in ignoredSystemPackages || lowerPkg.contains("inputmethod") || lowerPkg.contains("keyboard")) return
+
+        val isWatchedApp = pkg == "com.instagram.android" ||
+            pkg == "com.google.android.youtube" ||
+            pkg in DetectionEngine.TIKTOK_PACKAGES
+
+        if (!isWatchedApp) {
+            if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                val currentState = store.loadState()
+                val nowSec = System.currentTimeMillis() / 1000L
+                val grantStartSec = currentState.mindfulAllowanceUntilEpochSec - 180L
+                val inTransitionGrace = currentState.mindfulAllowanceUntilEpochSec > nowSec &&
+                    (nowSec - grantStartSec) in 0L..3L
+                if (!inTransitionGrace && (currentState.isCurrentlyInReelTab || currentState.mindfulAllowanceTarget != null)) {
+                    store.saveState(SessionAndStreakManager.onUserBouncedBack(currentState))
+                }
+            }
+            return
+        }
 
         val data = NodeData()
         root?.let { traverseNode(it, data, depth = 0) }
@@ -79,10 +110,21 @@ class ScrollessAccessibilityService : AccessibilityService() {
             selectedNodeLabels = data.selectedNodeLabels
         )
         val detection = detectionEngine.evaluateWindow(snapshot)
-        val nowSec = System.currentTimeMillis() / 1000L
+        val currentState = store.loadState()
 
+        val isTargetApp = (currentState.currentTarget?.packageName == pkg) ||
+            (currentState.currentTarget == ShortFormTarget.TIKTOK && pkg in DetectionEngine.TIKTOK_PACKAGES)
+
+        if (!detection.isShortForm && currentState.isCurrentlyInReelTab && isTargetApp) {
+            if (!detectionEngine.isExplicitNonShortFormInTargetApp(snapshot)) {
+                // Partial TYPE_WINDOW_CONTENT_CHANGED sub-node event inside Instagram/YouTube while watching Reels/Shorts; ignore so timer keeps ticking
+                return
+            }
+        }
+
+        val nowSec = System.currentTimeMillis() / 1000L
         val (updatedState, decision) = SessionAndStreakManager.onWindowEvaluated(
-            state = store.loadState(),
+            state = currentState,
             detection = detection,
             nowEpochSec = nowSec
         )
@@ -127,11 +169,9 @@ class ScrollessAccessibilityService : AccessibilityService() {
         lastInterruptionLaunchMs = now
 
         pauseActiveMediaPlayback()
-        if (decision.target == ShortFormTarget.YOUTUBE_SHORTS) {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-        }
         val intent = Intent(this, InterruptionActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("target_id", decision.target.name)
             putExtra("target_name", decision.target.displayName)
             putExtra("reason_name", decision.reason.name)
             putExtra("can_continue", decision.canContinueAfterPause)

@@ -42,10 +42,21 @@ class LocalStore(context: Context) {
                 .toSet()
         }
 
+        val currentTarget = prefs.getString("current_target", "")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { name -> runCatching { ShortFormTarget.valueOf(name) }.getOrNull() }
+
+        val mindfulAllowanceTarget = prefs.getString("mindful_allowance_target", "")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { name -> runCatching { ShortFormTarget.valueOf(name) }.getOrNull() }
+
         var state = SessionAndStreakState(
             mode = mode,
             dailyLimitSeconds = prefs.getInt("daily_limit_sec", mode.defaultDailyLimitSeconds),
             activeReelSecondsToday = prefs.getInt("active_reel_sec_today", 0),
+            isCurrentlyInReelTab = prefs.getBoolean("is_currently_in_reel_tab", false),
+            currentTarget = currentTarget,
+            mindfulAllowanceTarget = mindfulAllowanceTarget,
             interceptionsToday = prefs.getInt("interceptions_today", 0),
             weeklyInterceptions = prefs.getInt("weekly_interceptions", 0),
             streakDays = prefs.getInt("streak_days", 0),
@@ -69,6 +80,9 @@ class LocalStore(context: Context) {
             .putString("protection_mode", state.mode.name)
             .putInt("daily_limit_sec", state.dailyLimitSeconds)
             .putInt("active_reel_sec_today", state.activeReelSecondsToday)
+            .putBoolean("is_currently_in_reel_tab", state.isCurrentlyInReelTab)
+            .putString("current_target", state.currentTarget?.name ?: "")
+            .putString("mindful_allowance_target", state.mindfulAllowanceTarget?.name ?: "")
             .putInt("interceptions_today", state.interceptionsToday)
             .putInt("weekly_interceptions", state.weeklyInterceptions)
             .putInt("streak_days", state.streakDays)
