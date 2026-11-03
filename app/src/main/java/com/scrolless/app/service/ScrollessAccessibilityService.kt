@@ -55,6 +55,8 @@ class ScrollessAccessibilityService : AccessibilityService() {
                 if (decision is InterventionDecision.ShowInterruption) {
                     launchInterruptionScreen(decision)
                 }
+            } else {
+                dismissPictureInPictureWindows()
             }
             tickHandler.postDelayed(this, 1000L)
         }
@@ -139,10 +141,63 @@ class ScrollessAccessibilityService : AccessibilityService() {
         val updated = SessionAndStreakManager.onUserBouncedBack(store.loadState())
         store.saveState(updated)
         pauseActiveMediaPlayback()
-        performGlobalAction(GLOBAL_ACTION_BACK)
+
+        // 1. YouTube/Instagram is now the foreground window.
+        // Send BACK to YouTube so it closes the Shorts video player cleanly!
+        tickHandler.postDelayed({
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            dismissPictureInPictureWindows()
+        }, 80L)
+
+        // 2. Second dismissal pass
+        tickHandler.postDelayed({
+            dismissPictureInPictureWindows()
+        }, 160L)
+
+        // 3. Now send HOME to return to Android Home Screen cleanly without PiP!
         tickHandler.postDelayed({
             performGlobalAction(GLOBAL_ACTION_HOME)
-        }, 120L)
+            dismissPictureInPictureWindows()
+        }, 250L)
+
+        // 4. Clean up any trailing PiP window after returning to Home
+        tickHandler.postDelayed({
+            dismissPictureInPictureWindows()
+        }, 500L)
+    }
+
+    fun dismissPictureInPictureWindows() {
+        try {
+            val windowList = windows ?: return
+            for (window in windowList) {
+                if (window.isInPictureInPictureMode) {
+                    val root = window.root ?: continue
+                    root.performAction(AccessibilityNodeInfo.ACTION_DISMISS)
+                    root.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS.id)
+                    clickCloseInNode(root)
+                }
+            }
+        } catch (_: Throwable) {
+            // Safe fallback if window access is restricted
+        }
+    }
+
+    private fun clickCloseInNode(node: AccessibilityNodeInfo?) {
+        if (node == null) return
+        val id = node.viewIdResourceName?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        val text = node.text?.toString()?.lowercase() ?: ""
+
+        if (id.contains("close") || id.contains("dismiss") ||
+            desc.contains("close") || desc.contains("cerrar") || desc.contains("dismiss") ||
+            text.contains("close") || text.contains("cerrar")
+        ) {
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            return
+        }
+        for (i in 0 until node.childCount) {
+            clickCloseInNode(node.getChild(i))
+        }
     }
 
     fun pauseActiveMediaPlayback() {
@@ -178,6 +233,13 @@ class ScrollessAccessibilityService : AccessibilityService() {
             putExtra("remaining_sec", decision.remainingSecondsToday)
         }
         startActivity(intent)
+
+        tickHandler.postDelayed({
+            dismissPictureInPictureWindows()
+        }, 200L)
+        tickHandler.postDelayed({
+            dismissPictureInPictureWindows()
+        }, 450L)
     }
 
     private class NodeData {

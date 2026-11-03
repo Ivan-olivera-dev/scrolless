@@ -453,23 +453,38 @@ private fun TimeBudgetHeroCard(
                     .padding(end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(palette.danger.copy(alpha = 0.16f))
+                                .border(1.dp, palette.danger.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (isEs) "BLOQUEO TOTAL" else "ZERO SCROLL",
+                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
+                                color = palette.danger
+                            )
+                        }
+                    }
+                }
                 Text(
-                    text = if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
-                        if (isEs) "Bloqueo Total" else "Zero Scroll"
-                    } else {
-                        formatMinSec(state.remainingSecondsToday)
-                    },
+                    text = formatMinSec(state.remainingSecondsToday),
                     style = MaterialTheme.typography.displayLarge,
                     color = palette.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 1
                 )
                 Text(
                     text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
@@ -840,7 +855,7 @@ private fun ModeSelectorStack(
             onClick = { onSelectMode(ProtectionMode.STRICT_BUDGET) }
         )
         ModeOptionCard(
-            title = if (isEs) "Bloqueo Quirúrgico Total · 0 min" else "Zero-Scroll Surgical Block · 0 min",
+            title = if (isEs) "Bloqueo Total · 0 min" else "Zero Scroll · 0 min",
             subtitle = if (isEs) {
                 "Corta cualquier Reel, Short o TikTok en el primer segundo sin desactivar tus chats."
             } else {

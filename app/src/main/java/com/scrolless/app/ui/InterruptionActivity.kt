@@ -100,13 +100,18 @@ class InterruptionActivity : ComponentActivity() {
                     interceptionsToday = state.interceptionsToday,
                     isEs = isEs,
                     onExitShortForm = {
-                        ScrollessAccessibilityService.instance?.bounceBackFromShortForm()
-                        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        val service = ScrollessAccessibilityService.instance
+                        if (service != null) {
+                            finish()
+                            service.bounceBackFromShortForm()
+                        } else {
+                            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                                addCategory(Intent.CATEGORY_HOME)
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(homeIntent)
+                            finish()
                         }
-                        startActivity(homeIntent)
-                        finish()
                     },
                     onContinueMindfully = {
                         val nowSec = System.currentTimeMillis() / 1000L
