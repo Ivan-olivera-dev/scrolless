@@ -36,8 +36,8 @@ class DetectionEngine(
 
         val INSTAGRAM_REEL_VIEW_IDS = setOf(
             "com.instagram.android:id/clips_viewer_view_pager",
-            "com.instagram.android:id/clips_video_container",
-            "com.instagram.android:id/reel_viewer_root",
+            "com.instagram.android:id/clips_viewer_root",
+            "com.instagram.android:id/clips_viewer_content_pager",
             "com.instagram.android:id/clips_SwipeRefreshLayout"
         )
 
@@ -55,12 +55,7 @@ class DetectionEngine(
 
         private val INSTAGRAM_REEL_ID_SUBSTRINGS = listOf(
             "clips_viewer",
-            "clips_video",
-            "reel_viewer",
-            "clips_swipe",
-            "clips_item",
-            "clips_author",
-            "clips_ufi"
+            "clips_swipe"
         )
 
         private val YOUTUBE_SHORTS_ID_SUBSTRINGS = listOf(
@@ -88,14 +83,23 @@ class DetectionEngine(
         }
 
         if (pkg == "com.instagram.android") {
-            val hasSafeDmId = snapshot.viewIds.any { id ->
+            val hasSafeNonReelId = snapshot.viewIds.any { id ->
                 val lower = id.lowercase()
                 lower.contains("direct_thread") ||
                     lower.contains("row_inbox") ||
                     lower.contains("message_list") ||
+                    lower.contains("reel_viewer") ||
+                    lower.contains("story_viewer") ||
+                    lower.contains("reel_tray") ||
+                    lower.contains("feed_timeline") ||
+                    lower.contains("main_feed") ||
                     id in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS
             }
-            if (hasSafeDmId) {
+            if (hasSafeNonReelId) {
+                return DetectionResult(isShortForm = false)
+            }
+
+            if (isInstagramNonReelsTabSelected(snapshot.selectedNodeLabels)) {
                 return DetectionResult(isShortForm = false)
             }
 
@@ -122,22 +126,6 @@ class DetectionEngine(
                     isShortForm = true,
                     target = ShortFormTarget.INSTAGRAM_REELS,
                     matchedSignal = "selectedTab:$matchedSelectedLabel"
-                )
-            }
-
-            val hasReelsDesc = snapshot.contentDescriptions.any { desc ->
-                val lower = desc.lowercase().trim()
-                lower == "reels" || lower.startsWith("reels,") || lower.startsWith("reels ") || lower.contains("reels")
-            }
-            val hasReelsAudioOrRemix = snapshot.contentDescriptions.any { desc ->
-                val lower = desc.lowercase()
-                lower.contains("audio original") || lower.contains("original audio") || lower.contains("remix")
-            }
-            if (hasReelsDesc && hasReelsAudioOrRemix) {
-                return DetectionResult(
-                    isShortForm = true,
-                    target = ShortFormTarget.INSTAGRAM_REELS,
-                    matchedSignal = "contentDesc:reels+audio"
                 )
             }
 
@@ -203,25 +191,21 @@ class DetectionEngine(
 
     fun isExplicitNonShortFormInTargetApp(snapshot: WindowSnapshot): Boolean {
         if (snapshot.packageName == "com.instagram.android") {
-            val hasSafeFeedOrDmId = snapshot.viewIds.any { id ->
+            val hasSafeNonReelId = snapshot.viewIds.any { id ->
                 val lower = id.lowercase()
                 lower.contains("direct_thread") ||
                     lower.contains("row_inbox") ||
                     lower.contains("message_list") ||
+                    lower.contains("reel_viewer") ||
+                    lower.contains("story_viewer") ||
+                    lower.contains("reel_tray") ||
                     lower.contains("feed_timeline") ||
                     lower.contains("main_feed") ||
                     id in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS
             }
-            if (hasSafeFeedOrDmId) return true
+            if (hasSafeNonReelId) return true
 
-            val hasNonReelsTabSelected = snapshot.selectedNodeLabels.any { label ->
-                val lower = label.lowercase().trim()
-                lower.contains("home") || lower.contains("inicio") ||
-                    lower.contains("search") || lower.contains("buscar") ||
-                    lower.contains("explorar") || lower.contains("explore") ||
-                    lower.contains("profile") || lower.contains("perfil")
-            }
-            if (hasNonReelsTabSelected) return true
+            if (isInstagramNonReelsTabSelected(snapshot.selectedNodeLabels)) return true
 
             return false
         }
@@ -246,5 +230,27 @@ class DetectionEngine(
         }
 
         return false
+    }
+
+    private fun isInstagramNonReelsTabSelected(selectedNodeLabels: Set<String>): Boolean {
+        val hasReelsSelected = selectedNodeLabels.any { label ->
+            val lower = label.lowercase().trim()
+            lower == "reels" || lower.startsWith("reels,") || lower.startsWith("reels ")
+        }
+        if (hasReelsSelected) return false
+
+        return selectedNodeLabels.any { label ->
+            val lower = label.lowercase().trim()
+            lower == "home" || lower == "inicio" ||
+                lower.startsWith("home,") || lower.startsWith("inicio,") ||
+                lower == "search and explore" || lower == "buscar y explorar" ||
+                lower.startsWith("search and explore,") || lower.startsWith("buscar y explorar,") ||
+                lower == "explore" || lower == "explorar" ||
+                lower.startsWith("explore,") || lower.startsWith("explorar,") ||
+                lower == "search" || lower == "buscar" ||
+                lower.startsWith("search,") || lower.startsWith("buscar,") ||
+                lower == "profile" || lower == "perfil" ||
+                lower.startsWith("profile,") || lower.startsWith("perfil,")
+        }
     }
 }

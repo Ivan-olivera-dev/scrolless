@@ -88,8 +88,8 @@ class ScrollessAccessibilityService : AccessibilityService() {
                 val grantStartSec = currentState.mindfulAllowanceUntilEpochSec - 180L
                 val inTransitionGrace = currentState.mindfulAllowanceUntilEpochSec > nowSec &&
                     (nowSec - grantStartSec) in 0L..3L
-                if (!inTransitionGrace && (currentState.isCurrentlyInReelTab || currentState.mindfulAllowanceTarget != null)) {
-                    store.saveState(SessionAndStreakManager.onUserBouncedBack(currentState))
+                if (!inTransitionGrace && currentState.isCurrentlyInReelTab) {
+                    store.saveState(currentState.copy(isCurrentlyInReelTab = false, currentTarget = null))
                 }
             }
             return

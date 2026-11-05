@@ -411,8 +411,8 @@ fun InterruptionScreen(
                     if (isEs) "Respirá ${countdown}s para desbloquear acceso temporal"
                     else "Breathe ${countdown}s to unlock temporary access"
                 } else {
-                    if (isEs) "Continuar 3 minutos conscientes"
-                    else "Continue for 3 mindful minutes"
+                    if (isEs) "Continuar con mi margen disponible"
+                    else "Continue with my available budget"
                 }
                 Box(
                     modifier = Modifier

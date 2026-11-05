@@ -187,15 +187,23 @@ class CoreEngineTest {
     }
 
     @Test
-    fun `detects Instagram Reels via contentDescriptions containing reels and original audio`() {
-        val snapshot = WindowSnapshot(
+    fun `detects Instagram Reels via selected Reels tab and ignores contentDescriptions without selected tab`() {
+        val selectedTabSnapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = emptySet(),
+            selectedNodeLabels = setOf("Reels, tab 4 of 5")
+        )
+        val result1 = engine.evaluateWindow(selectedTabSnapshot)
+        assertTrue(result1.isShortForm)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, result1.target)
+
+        val unselectedDescSnapshot = WindowSnapshot(
             packageName = "com.instagram.android",
             viewIds = emptySet(),
             contentDescriptions = setOf("Reels, video", "Original audio by artist")
         )
-        val result = engine.evaluateWindow(snapshot)
-        assertTrue(result.isShortForm)
-        assertEquals(ShortFormTarget.INSTAGRAM_REELS, result.target)
+        val result2 = engine.evaluateWindow(unselectedDescSnapshot)
+        assertFalse(result2.isShortForm)
     }
 
     @Test
@@ -455,5 +463,101 @@ class CoreEngineTest {
         assertTrue(decision is InterventionDecision.ShowInterruption)
         assertEquals(InterruptionReason.MINDFUL_PAUSE_ON_ENTRY, (decision as InterventionDecision.ShowInterruption).reason)
         assertTrue(decision.canContinueAfterPause)
+    }
+
+    @Test
+    fun `Instagram Stories with reel_viewer view IDs are not detected as Reels`() {
+        val storyRootSnapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/reel_viewer_root")
+        )
+        val result1 = engine.evaluateWindow(storyRootSnapshot)
+        assertFalse("reel_viewer_root must not trigger Reels detection", result1.isShortForm)
+
+        val storyMediaSnapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/reel_viewer_media_container", "com.instagram.android:id/story_viewer")
+        )
+        val result2 = engine.evaluateWindow(storyMediaSnapshot)
+        assertFalse("reel_viewer_media_container must not trigger Reels detection", result2.isShortForm)
+    }
+
+    @Test
+    fun `Instagram Home Feed video ads and posts are not detected as Reels`() {
+        val feedAdSnapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/clips_video_container", "com.instagram.android:id/feed_timeline"),
+            contentDescriptions = setOf("Reels", "Audio original"),
+            selectedNodeLabels = setOf("Inicio")
+        )
+        val result1 = engine.evaluateWindow(feedAdSnapshot)
+        assertFalse("Feed video ad with clips_video_container and Inicio tab selected must not be detected as Reels", result1.isShortForm)
+
+        val feedAdWithoutTimeline = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/clips_video_container", "com.instagram.android:id/clips_item"),
+            contentDescriptions = setOf("Reels", "Audio original"),
+            selectedNodeLabels = setOf("Home")
+        )
+        val result2 = engine.evaluateWindow(feedAdWithoutTimeline)
+        assertFalse("Feed ad with Home tab selected must not be detected as Reels", result2.isShortForm)
+    }
+
+    @Test
+    fun `returning to Instagram Reels while daily budget remains allows entry without breathing pause`() {
+        val initial = SessionAndStreakState(
+            mode = ProtectionMode.MINDFUL_BUDGET,
+            dailyLimitSeconds = 15 * 60,
+            activeReelSecondsToday = 0
+        )
+        val reelsSnapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/clips_viewer_view_pager")
+        )
+        var t = 1000L
+
+        // 1. Initial entry shows breathing pause
+        val (state1, decision1) = SessionAndStreakManager.onWindowEvaluated(initial, engine.evaluateWindow(reelsSnapshot), t)
+        assertTrue(decision1 is InterventionDecision.ShowInterruption)
+
+        // 2. User unlocks mindful continue with 15m budget
+        var currentState = SessionAndStreakManager.grantMindfulContinue(state1, t)
+        assertTrue(currentState.isCurrentlyInReelTab)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, currentState.mindfulAllowanceTarget)
+        assertTrue("Allowance window must cover remaining budget", currentState.mindfulAllowanceUntilEpochSec >= t + 900L)
+
+        // User watches 120s of Reels
+        repeat(120) {
+            t++
+            val (ticked, _) = SessionAndStreakManager.onActiveSecondTick(currentState, t)
+            currentState = ticked
+        }
+        assertEquals(120, currentState.activeReelSecondsToday)
+
+        // 3. User switches to Instagram Stories/DMs -> timer pauses
+        val storySnapshot = WindowSnapshot(
+            packageName = "com.instagram.android",
+            viewIds = setOf("com.instagram.android:id/reel_viewer_root")
+        )
+        val (storyState, storyDecision) = SessionAndStreakManager.onWindowEvaluated(currentState, engine.evaluateWindow(storySnapshot), t)
+        assertTrue(storyDecision is InterventionDecision.Allow)
+        assertFalse("Timer must be paused while in Stories", storyState.isCurrentlyInReelTab)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, storyState.mindfulAllowanceTarget)
+        assertTrue(storyState.mindfulAllowanceUntilEpochSec > t)
+
+        // 4. User returns to Reels while budget remains (< 15 min) -> allowed without breathing pause!
+        val (returnedState, returnDecision) = SessionAndStreakManager.onWindowEvaluated(storyState, engine.evaluateWindow(reelsSnapshot), t)
+        assertTrue("Returning to Reels with remaining budget must be Allowed without breathing pause", returnDecision is InterventionDecision.Allow)
+        assertTrue("Timer must resume when returning to Reels", returnedState.isCurrentlyInReelTab)
+        assertEquals(ShortFormTarget.INSTAGRAM_REELS, returnedState.currentTarget)
+
+        // 5. Switching from Reels to YouTube Shorts STILL triggers breathing pause
+        val shortsSnapshot = WindowSnapshot(
+            packageName = "com.google.android.youtube",
+            viewIds = setOf("com.google.android.youtube:id/reel_player_page_container")
+        )
+        val (shortsState, shortsDecision) = SessionAndStreakManager.onWindowEvaluated(returnedState, engine.evaluateWindow(shortsSnapshot), t)
+        assertTrue("Switching to YouTube Shorts must trigger Interruption", shortsDecision is InterventionDecision.ShowInterruption)
+        assertEquals(ShortFormTarget.YOUTUBE_SHORTS, (shortsDecision as InterventionDecision.ShowInterruption).target)
     }
 }

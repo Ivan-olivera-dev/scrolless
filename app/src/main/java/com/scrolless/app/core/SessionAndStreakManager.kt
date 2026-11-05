@@ -64,9 +64,7 @@ object SessionAndStreakManager {
             // Immediately pause timer when user returns to normal feed, DMs, long-form video, or if target is disabled
             return state.copy(
                 isCurrentlyInReelTab = false,
-                currentTarget = null,
-                mindfulAllowanceTarget = null,
-                mindfulAllowanceUntilEpochSec = 0L
+                currentTarget = null
             ) to InterventionDecision.Allow
         }
 
@@ -132,9 +130,7 @@ object SessionAndStreakManager {
         if (!state.isCurrentlyInReelTab || state.currentTarget == null || state.currentTarget !in state.enabledTargets) {
             return state.copy(
                 isCurrentlyInReelTab = false,
-                currentTarget = null,
-                mindfulAllowanceTarget = null,
-                mindfulAllowanceUntilEpochSec = 0L
+                currentTarget = null
             ) to InterventionDecision.Allow
         }
 
@@ -179,11 +175,12 @@ object SessionAndStreakManager {
         nowEpochSec: Long,
         target: ShortFormTarget? = state.currentTarget
     ): SessionAndStreakState {
+        val allowanceWindowSec = max(MINDFUL_ALLOWANCE_WINDOW_SEC, state.remainingSecondsToday.toLong() + 60L)
         return state.copy(
             isCurrentlyInReelTab = target != null,
             currentTarget = target,
             mindfulAllowanceTarget = target,
-            mindfulAllowanceUntilEpochSec = nowEpochSec + MINDFUL_ALLOWANCE_WINDOW_SEC
+            mindfulAllowanceUntilEpochSec = nowEpochSec + allowanceWindowSec
         )
     }
 
