@@ -3,22 +3,37 @@ package com.scrolless.app.service
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
-import android.media.AudioFocusRequest
-import android.media.AudioManager
+import android.content.SharedPreferences
+import android.graphics.Rect
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import android.view.KeyEvent
+import android.os.SystemClock
+import android.util.Log
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.scrolless.app.BuildConfig
+import com.scrolless.app.core.Decision
+import com.scrolless.app.core.Detection
 import com.scrolless.app.core.DetectionEngine
-import com.scrolless.app.core.InterventionDecision
-import com.scrolless.app.core.SessionAndStreakManager
+import com.scrolless.app.core.ProtectionConfig
+import com.scrolless.app.core.RuntimeState
+import com.scrolless.app.core.ScreenNode
+import com.scrolless.app.core.SessionController
 import com.scrolless.app.core.ShortFormTarget
+import com.scrolless.app.core.Step
 import com.scrolless.app.core.WindowSnapshot
 import com.scrolless.app.data.LocalStore
 import com.scrolless.app.ui.InterruptionActivity
+import java.time.LocalDate
 
+/**
+ * Reads only the active window of watched apps (Instagram, YouTube, TikTok), feeds visible-node
+ * snapshots into the pure [DetectionEngine] / [SessionController], and launches the interruption
+ * screen. It never touches other apps: no media keys, no audio focus, no PiP dismissal, no BACK/HOME.
+ */
 class ScrollessAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -28,262 +43,230 @@ class ScrollessAccessibilityService : AccessibilityService() {
 
         val isRunning: Boolean
             get() = instance != null
+
+        private const val TAG = "ScrollessDiag"
+        private const val POLL_MS = 1_000L
+        private const val CONTENT_THROTTLE_MS = 250L
+        private const val PERSIST_THROTTLE_MS = 1_000L
+        private const val MAX_NODES = 1_500
+        private const val MAX_DEPTH = 64
+        private const val DIAG_MIN_HEIGHT = 0.3f
     }
 
     private lateinit var store: LocalStore
-    private val detectionEngine = DetectionEngine()
-    private val tickHandler = Handler(Looper.getMainLooper())
-    private var lastInterruptionLaunchMs: Long = 0L
-    private val ignoredSystemPackages = setOf("com.android.systemui", "android")
+    private val handler = Handler(Looper.getMainLooper())
 
-    private val secondTicker = object : Runnable {
+    private var config = ProtectionConfig()
+    private var runtime = RuntimeState()
+    private var lastPersisted: RuntimeState? = null
+    private var lastPersistMs = 0L
+    private var lastEvaluationMs = 0L
+    private var trailingScheduled = false
+    private var lastDetectionKey: String? = null
+
+    private val configListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key in LocalStore.CONFIG_KEYS) config = store.loadConfig()
+    }
+
+    private val poll = object : Runnable {
         override fun run() {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-            val currentState = store.loadState()
-            if (powerManager != null && !powerManager.isInteractive) {
-                if (currentState.isCurrentlyInReelTab || currentState.mindfulAllowanceTarget != null) {
-                    store.saveState(SessionAndStreakManager.onUserBouncedBack(currentState))
-                }
-                tickHandler.postDelayed(this, 1000L)
-                return
-            }
-
-            if (currentState.isCurrentlyInReelTab) {
-                val nowSec = System.currentTimeMillis() / 1000L
-                val (updated, decision) = SessionAndStreakManager.onActiveSecondTick(currentState, nowSec)
-                store.saveState(updated)
-                if (decision is InterventionDecision.ShowInterruption) {
-                    launchInterruptionScreen(decision)
-                }
-            } else {
-                dismissPictureInPictureWindows()
-            }
-            tickHandler.postDelayed(this, 1000L)
+            evaluateActiveWindow(fromWindowState = false)
+            val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val interactive = power?.isInteractive ?: true
+            apply(SessionController.tick(runtime, config, now(), interactive))
+            handler.postDelayed(this, POLL_MS)
         }
+    }
+
+    private val trailingEvaluation = Runnable {
+        trailingScheduled = false
+        evaluateActiveWindow(fromWindowState = false)
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         store = LocalStore(applicationContext)
+        config = store.loadConfig()
+        runtime = store.loadRuntimeForToday(config)
+        store.registerListener(configListener)
         instance = this
-        tickHandler.post(secondTicker)
+        handler.post(poll)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val root = rootInActiveWindow
-        val source = event?.source
-        val pkg = event?.packageName?.toString() ?: root?.packageName?.toString() ?: source?.packageName?.toString() ?: return
-        if (pkg == applicationContext.packageName) return
-        val lowerPkg = pkg.lowercase()
-        if (pkg in ignoredSystemPackages || lowerPkg.contains("inputmethod") || lowerPkg.contains("keyboard")) return
-
-        val isWatchedApp = pkg == "com.instagram.android" ||
-            pkg == "com.google.android.youtube" ||
-            pkg in DetectionEngine.TIKTOK_PACKAGES
-
-        if (!isWatchedApp) {
-            if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                val currentState = store.loadState()
-                val nowSec = System.currentTimeMillis() / 1000L
-                val grantStartSec = currentState.mindfulAllowanceUntilEpochSec - 180L
-                val inTransitionGrace = currentState.mindfulAllowanceUntilEpochSec > nowSec &&
-                    (nowSec - grantStartSec) in 0L..3L
-                if (!inTransitionGrace && currentState.isCurrentlyInReelTab) {
-                    store.saveState(currentState.copy(isCurrentlyInReelTab = false, currentTarget = null))
-                }
-            }
+        if (event == null || !::store.isInitialized) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            evaluateActiveWindow(fromWindowState = true)
             return
         }
-
-        val data = NodeData()
-        root?.let { traverseNode(it, data, depth = 0) }
-        if (data.visitedCount < 400 && source != null && source != root) {
-            traverseNode(source, data, depth = 0)
-        }
-
-        if (store.isInspectorEnabled() && data.viewIds.isNotEmpty()) {
-            store.recordInspectedViewIds(data.viewIds)
-        }
-
-        val snapshot = WindowSnapshot(
-            packageName = pkg,
-            viewIds = data.viewIds,
-            contentDescriptions = data.contentDescriptions,
-            selectedNodeLabels = data.selectedNodeLabels
-        )
-        val detection = detectionEngine.evaluateWindow(snapshot)
-        val currentState = store.loadState()
-
-        val isTargetApp = (currentState.currentTarget?.packageName == pkg) ||
-            (currentState.currentTarget == ShortFormTarget.TIKTOK && pkg in DetectionEngine.TIKTOK_PACKAGES)
-
-        if (!detection.isShortForm && currentState.isCurrentlyInReelTab && isTargetApp) {
-            if (!detectionEngine.isExplicitNonShortFormInTargetApp(snapshot)) {
-                // Partial TYPE_WINDOW_CONTENT_CHANGED sub-node event inside Instagram/YouTube while watching Reels/Shorts; ignore so timer keeps ticking
-                return
-            }
-        }
-
-        val nowSec = System.currentTimeMillis() / 1000L
-        val (updatedState, decision) = SessionAndStreakManager.onWindowEvaluated(
-            state = currentState,
-            detection = detection,
-            nowEpochSec = nowSec
-        )
-        store.saveState(updatedState)
-
-        if (decision is InterventionDecision.ShowInterruption) {
-            launchInterruptionScreen(decision)
+        // Content / scroll events: throttle to 250 ms with a trailing evaluation.
+        val elapsed = SystemClock.uptimeMillis() - lastEvaluationMs
+        if (elapsed >= CONTENT_THROTTLE_MS) {
+            evaluateActiveWindow(fromWindowState = false)
+        } else if (!trailingScheduled) {
+            trailingScheduled = true
+            handler.postDelayed(trailingEvaluation, CONTENT_THROTTLE_MS - elapsed)
         }
     }
 
-    fun bounceBackFromShortForm() {
-        val updated = SessionAndStreakManager.onUserBouncedBack(store.loadState())
-        store.saveState(updated)
-        pauseActiveMediaPlayback()
-
-        // 1. YouTube/Instagram is now the foreground window.
-        // Send BACK to YouTube so it closes the Shorts video player cleanly!
-        tickHandler.postDelayed({
-            performGlobalAction(GLOBAL_ACTION_BACK)
-            dismissPictureInPictureWindows()
-        }, 80L)
-
-        // 2. Second dismissal pass
-        tickHandler.postDelayed({
-            dismissPictureInPictureWindows()
-        }, 160L)
-
-        // 3. Now send HOME to return to Android Home Screen cleanly without PiP!
-        tickHandler.postDelayed({
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            dismissPictureInPictureWindows()
-        }, 250L)
-
-        // 4. Clean up any trailing PiP window after returning to Home
-        tickHandler.postDelayed({
-            dismissPictureInPictureWindows()
-        }, 500L)
+    /** Called by InterruptionActivity when the user continues after the breathing pause. */
+    fun onContinueFromInterruption(target: ShortFormTarget) {
+        rollIfNeeded()
+        runtime = SessionController.onContinue(runtime, config, target, now())
+        persist(force = true)
     }
 
-    fun dismissPictureInPictureWindows() {
-        try {
-            val windowList = windows ?: return
-            for (window in windowList) {
-                if (window.isInPictureInPictureMode) {
-                    val root = window.root ?: continue
-                    root.performAction(AccessibilityNodeInfo.ACTION_DISMISS)
-                    root.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS.id)
-                    clickCloseInNode(root)
-                }
-            }
+    /** Called by InterruptionActivity when the user steps back (the activity itself goes Home). */
+    fun onStepBackFromInterruption() {
+        rollIfNeeded()
+        runtime = SessionController.onStepBack(runtime)
+        persist(force = true)
+    }
+
+    private fun now(): Long = System.currentTimeMillis()
+
+    private fun rollIfNeeded() {
+        runtime = SessionController.rollover(runtime, config, LocalDate.now().toString())
+    }
+
+    private fun evaluateActiveWindow(fromWindowState: Boolean) {
+        lastEvaluationMs = SystemClock.uptimeMillis()
+        if (trailingScheduled) {
+            handler.removeCallbacks(trailingEvaluation)
+            trailingScheduled = false
+        }
+        val root = try {
+            rootInActiveWindow
         } catch (_: Throwable) {
-            // Safe fallback if window access is restricted
+            null
         }
+        val pkg = root?.packageName?.toString().orEmpty()
+        val snapshot = if (pkg in DetectionEngine.WATCHED_PACKAGES && root != null) {
+            captureSnapshot(root, pkg)
+        } else {
+            WindowSnapshot(pkg, emptyList())
+        }
+        val detection = DetectionEngine.detect(snapshot, config.fullAppTargets)
+        val step = apply(SessionController.onDetection(runtime, config, detection, now()))
+        diagnose(snapshot, detection, step.decision, fromWindowState)
     }
 
-    private fun clickCloseInNode(node: AccessibilityNodeInfo?) {
-        if (node == null) return
-        val id = node.viewIdResourceName?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
-        val text = node.text?.toString()?.lowercase() ?: ""
-
-        if (id.contains("close") || id.contains("dismiss") ||
-            desc.contains("close") || desc.contains("cerrar") || desc.contains("dismiss") ||
-            text.contains("close") || text.contains("cerrar")
-        ) {
-            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            return
+    private fun apply(step: Step): Step {
+        val before = runtime
+        runtime = step.state
+        rollIfNeeded()
+        val decision = step.decision
+        if (decision is Decision.Interrupt) {
+            persist(force = true)
+            if (decision.shouldLaunch) launchInterruption(decision)
+        } else if (runtime != before) {
+            persist(force = false)
         }
-        for (i in 0 until node.childCount) {
-            clickCloseInNode(node.getChild(i))
-        }
+        return step
     }
 
-    fun pauseActiveMediaPlayback() {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        try {
-            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-                .setOnAudioFocusChangeListener { /* no-op */ }
-                .build()
-            audioManager.requestAudioFocus(focusRequest)
-        } catch (_: Throwable) {
-            // Audio focus failure ignored safely
-        }
-        try {
-            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
-            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
-        } catch (_: Throwable) {
-            // Media key failure ignored safely
-        }
+    private fun persist(force: Boolean) {
+        val snapshot = SessionController.persistable(runtime)
+        if (snapshot == lastPersisted) return
+        val nowUptime = SystemClock.uptimeMillis()
+        if (!force && nowUptime - lastPersistMs < PERSIST_THROTTLE_MS) return
+        store.saveRuntime(snapshot)
+        lastPersisted = snapshot
+        lastPersistMs = nowUptime
     }
 
-    private fun launchInterruptionScreen(decision: InterventionDecision.ShowInterruption) {
-        val now = System.currentTimeMillis()
-        if (now - lastInterruptionLaunchMs < 900L) return
-        lastInterruptionLaunchMs = now
-
-        pauseActiveMediaPlayback()
+    private fun launchInterruption(decision: Decision.Interrupt) {
         val intent = Intent(this, InterruptionActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("target_id", decision.target.name)
             putExtra("target_name", decision.target.displayName)
             putExtra("reason_name", decision.reason.name)
-            putExtra("can_continue", decision.canContinueAfterPause)
+            putExtra("can_continue", decision.canContinue)
             putExtra("remaining_sec", decision.remainingSecondsToday)
         }
         startActivity(intent)
-
-        tickHandler.postDelayed({
-            dismissPictureInPictureWindows()
-        }, 200L)
-        tickHandler.postDelayed({
-            dismissPictureInPictureWindows()
-        }, 450L)
     }
 
-    private class NodeData {
-        val viewIds = mutableSetOf<String>()
-        val selectedNodeLabels = mutableSetOf<String>()
-        val contentDescriptions = mutableSetOf<String>()
-        var visitedCount = 0
+    private fun screenSize(): Pair<Int, Int> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = runCatching {
+                (getSystemService(Context.WINDOW_SERVICE) as WindowManager).currentWindowMetrics.bounds
+            }.getOrNull()
+            if (bounds != null && bounds.width() > 0 && bounds.height() > 0) return bounds.width() to bounds.height()
+        }
+        val metrics = resources.displayMetrics
+        return metrics.widthPixels to metrics.heightPixels
     }
 
-    private fun traverseNode(node: AccessibilityNodeInfo?, data: NodeData, depth: Int) {
-        if (node == null || depth > 35 || data.visitedCount >= 400) return
-        data.visitedCount++
+    private fun captureSnapshot(root: AccessibilityNodeInfo, pkg: String): WindowSnapshot {
+        val (width, height) = screenSize()
+        val nodes = ArrayList<ScreenNode>(256)
+        val rect = Rect()
+        var visited = 0
 
-        node.viewIdResourceName?.let { data.viewIds.add(it) }
-
-        val desc = node.contentDescription?.toString()
-        val text = node.text?.toString()
-
-        if (!desc.isNullOrBlank()) {
-            data.contentDescriptions.add(desc)
-        }
-        if (!text.isNullOrBlank()) {
-            data.contentDescriptions.add(text)
-        }
-
-        if (node.isSelected) {
-            if (!desc.isNullOrBlank()) {
-                data.selectedNodeLabels.add(desc)
+        fun visit(node: AccessibilityNodeInfo, depth: Int) {
+            if (visited >= MAX_NODES || depth > MAX_DEPTH) return
+            visited++
+            // Invisible parents are still descended into; only the node itself is filtered.
+            node.getBoundsInScreen(rect)
+            ScreenNode.fromBounds(
+                viewId = node.viewIdResourceName,
+                selected = node.isSelected,
+                visibleToUser = node.isVisibleToUser,
+                left = rect.left,
+                top = rect.top,
+                right = rect.right,
+                bottom = rect.bottom,
+                screenWidth = width,
+                screenHeight = height
+            )?.let(nodes::add)
+            for (i in 0 until node.childCount) {
+                if (visited >= MAX_NODES) break
+                val child = try {
+                    node.getChild(i)
+                } catch (_: Throwable) {
+                    null
+                } ?: continue
+                visit(child, depth + 1)
             }
-            if (!text.isNullOrBlank()) {
-                data.selectedNodeLabels.add(text)
-            }
         }
 
-        for (i in 0 until node.childCount) {
-            if (data.visitedCount >= 400) break
-            traverseNode(node.getChild(i), data, depth + 1)
+        try {
+            visit(root, 0)
+        } catch (_: Throwable) {
+            // A node can become stale mid-traversal; evaluate whatever was captured.
         }
+        return WindowSnapshot(pkg, nodes)
+    }
+
+    private fun diagnose(snapshot: WindowSnapshot, detection: Detection, decision: Decision, fromWindowState: Boolean) {
+        if (!BuildConfig.DEBUG) return
+        val key = "${snapshot.packageName}|${detection.target}|${detection.signal}"
+        val changed = key != lastDetectionKey
+        lastDetectionKey = key
+        if (!fromWindowState && !changed) return
+        val entries = snapshot.nodes
+            .filter { it.viewId != null && (it.heightFraction >= DIAG_MIN_HEIGHT || it.selected) }
+            .joinToString(",") { node ->
+                val e = DetectionEngine.entry(node.viewId!!)
+                "$e(${"%.2f".format(node.heightFraction)}${if (node.selected) ",sel" else ""})"
+            }
+        val decisionLabel = when (decision) {
+            is Decision.Allow -> "allow active=${runtime.activeTarget}"
+            is Decision.Interrupt -> "interrupt ${decision.target} ${decision.reason} launch=${decision.shouldLaunch}"
+        }
+        Log.d(TAG, "pkg=${snapshot.packageName} signal=${detection.signal} decision=$decisionLabel nodes=[$entries]")
     }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
-        tickHandler.removeCallbacks(secondTicker)
+        handler.removeCallbacks(poll)
+        handler.removeCallbacks(trailingEvaluation)
+        if (::store.isInitialized) {
+            store.unregisterListener(configListener)
+            persist(force = true)
+        }
         instance = null
         super.onDestroy()
     }

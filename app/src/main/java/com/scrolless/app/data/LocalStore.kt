@@ -2,95 +2,139 @@ package com.scrolless.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.scrolless.app.core.ProtectionConfig
 import com.scrolless.app.core.ProtectionMode
-import com.scrolless.app.core.SessionAndStreakManager
-import com.scrolless.app.core.SessionAndStreakState
+import com.scrolless.app.core.RuntimeCodec
+import com.scrolless.app.core.RuntimeState
+import com.scrolless.app.core.SessionController
 import com.scrolless.app.core.ShortFormTarget
 import java.time.LocalDate
 
+/**
+ * Local-only persistence. Config keys are written only by MainActivity; runtime keys only by the
+ * accessibility service (or, when the service is not running, by InterruptionActivity's fallback).
+ */
 class LocalStore(context: Context) {
     private val prefs = context.getSharedPreferences("scrolless_local_store", Context.MODE_PRIVATE)
 
-    fun loadState(): SessionAndStreakState {
-        if (prefs.getInt("store_schema_version", 1) < 2) {
-            prefs.edit()
-                .putInt("store_schema_version", 2)
-                .putInt("weekly_interceptions", 0)
-                .putInt("streak_days", 0)
-                .putInt("streak_shields", 0)
-                .putInt("interceptions_today", 0)
-                .putInt("active_reel_sec_today", 0)
-                .apply()
-        }
+    companion object {
+        const val SCHEMA_VERSION = 3
 
-        val todayIso = LocalDate.now().toString()
-        val lastDate = prefs.getString("last_date_iso", todayIso) ?: todayIso
+        private const val KEY_SCHEMA = "store_schema_version"
 
-        val modeName = prefs.getString("protection_mode", ProtectionMode.MINDFUL_BUDGET.name)
-            ?: ProtectionMode.MINDFUL_BUDGET.name
-        val mode = runCatching { ProtectionMode.valueOf(modeName) }
-            .getOrDefault(ProtectionMode.MINDFUL_BUDGET)
+        // Config
+        const val KEY_MODE = "protection_mode"
+        const val KEY_DAILY_LIMIT = "daily_limit_sec"
+        const val KEY_ENABLED_TARGETS = "enabled_targets"
+        const val KEY_FULL_APP_TARGETS = "full_app_targets"
+        const val KEY_DARK_THEME = "dark_theme"
+        const val KEY_UI_LANG = "ui_lang"
 
-        val rawTargets = prefs.getString("enabled_targets", null)
-        val enabledTargets: Set<ShortFormTarget> = if (rawTargets == null) {
-            ShortFormTarget.entries.toSet()
-        } else if (rawTargets.isBlank()) {
-            emptySet()
-        } else {
-            rawTargets.split(",")
-                .mapNotNull { name -> runCatching { ShortFormTarget.valueOf(name.trim()) }.getOrNull() }
-                .toSet()
-        }
+        // Runtime
+        const val KEY_TODAY_SECONDS = "active_reel_sec_today"
+        const val KEY_TODAY_INTERCEPTIONS = "interceptions_today"
+        const val KEY_HISTORY = "history_7d"
+        const val KEY_STREAK_DAYS = "streak_days"
+        const val KEY_STREAK_SHIELDS = "streak_shields"
+        const val KEY_PASS_TARGET = "pass_target"
+        const val KEY_PASS_UNTIL_MS = "pass_until_ms"
+        const val KEY_LAST_DATE = "last_date_iso"
 
-        val currentTarget = prefs.getString("current_target", "")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { name -> runCatching { ShortFormTarget.valueOf(name) }.getOrNull() }
+        val CONFIG_KEYS = setOf(KEY_MODE, KEY_DAILY_LIMIT, KEY_ENABLED_TARGETS, KEY_FULL_APP_TARGETS)
 
-        val mindfulAllowanceTarget = prefs.getString("mindful_allowance_target", "")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { name -> runCatching { ShortFormTarget.valueOf(name) }.getOrNull() }
-
-        var state = SessionAndStreakState(
-            mode = mode,
-            dailyLimitSeconds = prefs.getInt("daily_limit_sec", mode.defaultDailyLimitSeconds),
-            activeReelSecondsToday = prefs.getInt("active_reel_sec_today", 0),
-            isCurrentlyInReelTab = prefs.getBoolean("is_currently_in_reel_tab", false),
-            currentTarget = currentTarget,
-            mindfulAllowanceTarget = mindfulAllowanceTarget,
-            interceptionsToday = prefs.getInt("interceptions_today", 0),
-            weeklyInterceptions = prefs.getInt("weekly_interceptions", 0),
-            streakDays = prefs.getInt("streak_days", 0),
-            streakShields = prefs.getInt("streak_shields", 0),
-            mindfulAllowanceUntilEpochSec = prefs.getLong("mindful_until_epoch", 0L),
-            enabledTargets = enabledTargets
+        private val OBSOLETE_V3_KEYS = listOf(
+            "is_currently_in_reel_tab",
+            "current_target",
+            "mindful_allowance_target",
+            "mindful_until_epoch",
+            "weekly_interceptions",
+            "inspector_enabled",
+            "last_inspected_ids"
         )
-
-        if (lastDate != todayIso) {
-            state = SessionAndStreakManager.onDayRollover(state)
-            prefs.edit().putString("last_date_iso", todayIso).apply()
-            saveState(state)
-        }
-        return state
     }
 
-    fun saveState(state: SessionAndStreakState) {
-        val targetsString = state.enabledTargets.joinToString(",") { it.name }
+    init {
+        migrate()
+    }
+
+    private fun migrate() {
+        val version = prefs.getInt(KEY_SCHEMA, 1)
+        if (version >= SCHEMA_VERSION) return
+        val editor = prefs.edit()
+        if (version < 2) {
+            // v1 shipped mocked numbers: reset every counter.
+            editor.putInt(KEY_STREAK_DAYS, 0)
+                .putInt(KEY_STREAK_SHIELDS, 0)
+                .putInt(KEY_TODAY_INTERCEPTIONS, 0)
+                .putInt(KEY_TODAY_SECONDS, 0)
+        }
+        // v3: split config/runtime; drop sticky session keys and the never-reset weekly counter.
+        OBSOLETE_V3_KEYS.forEach { editor.remove(it) }
+        editor.putInt(KEY_SCHEMA, SCHEMA_VERSION).apply()
+    }
+
+    fun loadConfig(): ProtectionConfig {
+        val mode = prefs.getString(KEY_MODE, null)
+            ?.let { name -> runCatching { ProtectionMode.valueOf(name) }.getOrNull() }
+            ?: ProtectionMode.MINDFUL_BUDGET
+        return ProtectionConfig(
+            mode = mode,
+            dailyLimitSeconds = prefs.getInt(KEY_DAILY_LIMIT, mode.defaultDailyLimitSeconds),
+            enabledTargets = RuntimeCodec.decodeTargets(prefs.getString(KEY_ENABLED_TARGETS, null), ShortFormTarget.entries.toSet()),
+            fullAppTargets = RuntimeCodec.decodeTargets(prefs.getString(KEY_FULL_APP_TARGETS, null), emptySet())
+                - ShortFormTarget.TIKTOK
+        )
+    }
+
+    fun saveConfig(config: ProtectionConfig) {
         prefs.edit()
-            .putInt("store_schema_version", 2)
-            .putString("protection_mode", state.mode.name)
-            .putInt("daily_limit_sec", state.dailyLimitSeconds)
-            .putInt("active_reel_sec_today", state.activeReelSecondsToday)
-            .putBoolean("is_currently_in_reel_tab", state.isCurrentlyInReelTab)
-            .putString("current_target", state.currentTarget?.name ?: "")
-            .putString("mindful_allowance_target", state.mindfulAllowanceTarget?.name ?: "")
-            .putInt("interceptions_today", state.interceptionsToday)
-            .putInt("weekly_interceptions", state.weeklyInterceptions)
-            .putInt("streak_days", state.streakDays)
-            .putInt("streak_shields", state.streakShields)
-            .putLong("mindful_until_epoch", state.mindfulAllowanceUntilEpochSec)
-            .putString("enabled_targets", targetsString)
-            .putString("last_date_iso", LocalDate.now().toString())
+            .putString(KEY_MODE, config.mode.name)
+            .putInt(KEY_DAILY_LIMIT, config.dailyLimitSeconds)
+            .putString(KEY_ENABLED_TARGETS, RuntimeCodec.encodeTargets(config.enabledTargets))
+            .putString(KEY_FULL_APP_TARGETS, RuntimeCodec.encodeTargets(config.fullAppTargets - ShortFormTarget.TIKTOK))
             .apply()
+    }
+
+    /** Raw persisted runtime; callers apply [SessionController.rollover] for the current day. */
+    fun loadRuntime(): RuntimeState = RuntimeState(
+        dayIso = prefs.getString(KEY_LAST_DATE, "") ?: "",
+        activeSecondsToday = prefs.getInt(KEY_TODAY_SECONDS, 0),
+        interceptionsToday = prefs.getInt(KEY_TODAY_INTERCEPTIONS, 0),
+        history = RuntimeCodec.decodeHistory(prefs.getString(KEY_HISTORY, "")),
+        streakDays = prefs.getInt(KEY_STREAK_DAYS, 0),
+        streakShields = prefs.getInt(KEY_STREAK_SHIELDS, 0),
+        passTarget = prefs.getString(KEY_PASS_TARGET, "")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { name -> runCatching { ShortFormTarget.valueOf(name) }.getOrNull() },
+        passUntilMs = prefs.getLong(KEY_PASS_UNTIL_MS, 0L)
+    )
+
+    /** Runtime for today: persisted state with the day rollover applied (not written back). */
+    fun loadRuntimeForToday(config: ProtectionConfig = loadConfig()): RuntimeState =
+        SessionController.rollover(loadRuntime(), config, LocalDate.now().toString())
+
+    fun saveRuntime(state: RuntimeState) {
+        prefs.edit()
+            .putString(KEY_LAST_DATE, state.dayIso)
+            .putInt(KEY_TODAY_SECONDS, state.activeSecondsToday)
+            .putInt(KEY_TODAY_INTERCEPTIONS, state.interceptionsToday)
+            .putString(KEY_HISTORY, RuntimeCodec.encodeHistory(state.history))
+            .putInt(KEY_STREAK_DAYS, state.streakDays)
+            .putInt(KEY_STREAK_SHIELDS, state.streakShields)
+            .putString(KEY_PASS_TARGET, state.passTarget?.name ?: "")
+            .putLong(KEY_PASS_UNTIL_MS, state.passUntilMs)
+            .apply()
+    }
+
+    /** Fallback used by InterruptionActivity when the service instance is not available. */
+    fun applyContinueFallback(target: ShortFormTarget, nowMs: Long) {
+        val config = loadConfig()
+        saveRuntime(SessionController.onContinue(loadRuntimeForToday(config), config, target, nowMs))
+    }
+
+    /** Fallback used by InterruptionActivity when the service instance is not available. */
+    fun applyStepBackFallback() {
+        saveRuntime(SessionController.onStepBack(loadRuntimeForToday()))
     }
 
     fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
@@ -101,22 +145,9 @@ class LocalStore(context: Context) {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
-    fun isDarkTheme(defaultDark: Boolean): Boolean = prefs.getBoolean("dark_theme", defaultDark)
-    fun setDarkTheme(isDark: Boolean) = prefs.edit().putBoolean("dark_theme", isDark).apply()
+    fun isDarkTheme(defaultDark: Boolean): Boolean = prefs.getBoolean(KEY_DARK_THEME, defaultDark)
+    fun setDarkTheme(isDark: Boolean) = prefs.edit().putBoolean(KEY_DARK_THEME, isDark).apply()
 
-    fun getLanguage(): String = prefs.getString("ui_lang", "es") ?: "es"
-    fun setLanguage(lang: String) = prefs.edit().putString("ui_lang", lang).apply()
-
-    fun isInspectorEnabled(): Boolean = prefs.getBoolean("inspector_enabled", false)
-    fun setInspectorEnabled(enabled: Boolean) = prefs.edit().putBoolean("inspector_enabled", enabled).apply()
-
-    fun getLastInspectedViewIds(): List<String> {
-        val raw = prefs.getString("last_inspected_ids", "") ?: ""
-        return if (raw.isBlank()) emptyList() else raw.split("|").filter { it.isNotBlank() }
-    }
-
-    fun recordInspectedViewIds(ids: Collection<String>) {
-        val trimmed = ids.take(8).joinToString("|")
-        prefs.edit().putString("last_inspected_ids", trimmed).apply()
-    }
+    fun getLanguage(): String = prefs.getString(KEY_UI_LANG, "es") ?: "es"
+    fun setLanguage(lang: String) = prefs.edit().putString(KEY_UI_LANG, lang).apply()
 }

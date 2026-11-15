@@ -3,6 +3,7 @@ package com.scrolless.app.ui
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -52,7 +53,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.InterruptionReason
-import com.scrolless.app.core.SessionAndStreakManager
 import com.scrolless.app.core.ShortFormTarget
 import com.scrolless.app.data.LocalStore
 import com.scrolless.app.service.ScrollessAccessibilityService
@@ -65,7 +65,40 @@ class InterruptionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The system back button behaves exactly like "step back": never reveal the short-form feed.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = stepBack()
+        })
         renderFromIntent(intent)
+    }
+
+    /** Step back: stop the session and clear the pass, go to the launcher, close this screen. */
+    private fun stepBack() {
+        val service = ScrollessAccessibilityService.instance
+        if (service != null) {
+            service.onStepBackFromInterruption()
+        } else {
+            LocalStore(applicationContext).applyStepBackFallback()
+        }
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        startActivity(homeIntent)
+        finish()
+    }
+
+    /** Continue: grant the pass for [target]; the session starts on the next positive detection. */
+    private fun continueMindfully(target: ShortFormTarget?) {
+        if (target != null) {
+            val service = ScrollessAccessibilityService.instance
+            if (service != null) {
+                service.onContinueFromInterruption(target)
+            } else {
+                LocalStore(applicationContext).applyContinueFallback(target, System.currentTimeMillis())
+            }
+        }
+        finish()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -88,7 +121,7 @@ class InterruptionActivity : ComponentActivity() {
         setContent {
             val isDark = store.isDarkTheme(defaultDark = true)
             val isEs = store.getLanguage() == "es"
-            val state = store.loadState()
+            val state = store.loadRuntimeForToday()
 
             PlayaTheme(darkTheme = isDark) {
                 InterruptionScreen(
@@ -99,31 +132,8 @@ class InterruptionActivity : ComponentActivity() {
                     streakDays = state.streakDays,
                     interceptionsToday = state.interceptionsToday,
                     isEs = isEs,
-                    onExitShortForm = {
-                        val service = ScrollessAccessibilityService.instance
-                        if (service != null) {
-                            finish()
-                            service.bounceBackFromShortForm()
-                        } else {
-                            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                                addCategory(Intent.CATEGORY_HOME)
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            startActivity(homeIntent)
-                            finish()
-                        }
-                    },
-                    onContinueMindfully = {
-                        val nowSec = System.currentTimeMillis() / 1000L
-                        val currentState = store.loadState()
-                        val updated = SessionAndStreakManager.grantMindfulContinue(
-                            state = currentState,
-                            nowEpochSec = nowSec,
-                            target = target ?: currentState.currentTarget
-                        )
-                        store.saveState(updated)
-                        finish()
-                    }
+                    onExitShortForm = { stepBack() },
+                    onContinueMindfully = { continueMindfully(target) }
                 )
             }
         }

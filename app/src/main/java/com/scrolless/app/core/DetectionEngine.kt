@@ -6,251 +6,148 @@ enum class ShortFormTarget(val displayName: String, val packageName: String) {
     TIKTOK("TikTok", "com.zhiliaoapp.musically")
 }
 
+/** How much of a watched app is intercepted. TikTok is always whole-app. */
+enum class AppBlockScope { SURGICAL, FULL_APP }
+
+/**
+ * One on-screen node. Only nodes visible to the user with a positive visible area are captured;
+ * fractions are the visible bounds clipped to the screen divided by the screen size.
+ * No text or content descriptions are ever captured (privacy).
+ */
+data class ScreenNode(
+    val viewId: String?,
+    val selected: Boolean,
+    val heightFraction: Float,
+    val widthFraction: Float
+) {
+    companion object {
+        /** Builds a node from raw screen bounds, or null when it is invisible or has no on-screen area. */
+        fun fromBounds(
+            viewId: String?,
+            selected: Boolean,
+            visibleToUser: Boolean,
+            left: Int,
+            top: Int,
+            right: Int,
+            bottom: Int,
+            screenWidth: Int,
+            screenHeight: Int
+        ): ScreenNode? {
+            if (!visibleToUser || screenWidth <= 0 || screenHeight <= 0) return null
+            val width = right.coerceAtMost(screenWidth) - left.coerceAtLeast(0)
+            val height = bottom.coerceAtMost(screenHeight) - top.coerceAtLeast(0)
+            if (width <= 0 || height <= 0) return null
+            return ScreenNode(
+                viewId = viewId,
+                selected = selected,
+                heightFraction = height.toFloat() / screenHeight,
+                widthFraction = width.toFloat() / screenWidth
+            )
+        }
+    }
+}
+
 data class WindowSnapshot(
     val packageName: String,
-    val viewIds: Set<String>,
-    val contentDescriptions: Set<String> = emptySet(),
-    val selectedNodeLabels: Set<String> = emptySet()
-)
-
-data class DetectionResult(
-    val isShortForm: Boolean,
-    val target: ShortFormTarget? = null,
-    val matchedSignal: String? = null
+    val nodes: List<ScreenNode>
 )
 
 /**
- * Surgical detector that distinguishes short-form vertical feeds (Reels/Shorts/TikTok)
- * from normal app usage (Instagram DMs/stories/feed, long-form YouTube videos).
+ * [target] is the short-form surface on screen (null = negative); [watchedTarget] is the target
+ * owning the package, used to tell a same-app transient frame from leaving the app.
  */
-class DetectionEngine(
-    private val customReelViewIds: Set<String> = emptySet()
-) {
-    companion object {
-        val TIKTOK_PACKAGES = setOf(
-            "com.zhiliaoapp.musically",
-            "com.ss.android.ugc.trill",
-            "com.zhiliaoapp.musically.go",
-            "com.ss.android.ugc.aweme"
-        )
+data class Detection(
+    val target: ShortFormTarget?,
+    val watchedTarget: ShortFormTarget?,
+    val signal: String
+)
 
-        val INSTAGRAM_REEL_VIEW_IDS = setOf(
-            "com.instagram.android:id/clips_viewer_view_pager",
-            "com.instagram.android:id/clips_viewer_root",
-            "com.instagram.android:id/clips_viewer_content_pager",
-            "com.instagram.android:id/clips_SwipeRefreshLayout"
-        )
+/**
+ * Surgical detector based only on visible, large on-screen nodes (rules aligned with StopScroll,
+ * 2026-10-31, Instagram 453). No label or content-description heuristics.
+ */
+object DetectionEngine {
+    const val TALL = 0.6f
 
-        val INSTAGRAM_SAFE_NON_REEL_VIEW_IDS = setOf(
-            "com.instagram.android:id/direct_thread_toggle",
-            "com.instagram.android:id/row_inbox_container"
-        )
+    const val INSTAGRAM_PACKAGE = "com.instagram.android"
+    const val YOUTUBE_PACKAGE = "com.google.android.youtube"
 
-        val YOUTUBE_SHORTS_VIEW_IDS = setOf(
-            "com.google.android.youtube:id/reel_recycler",
-            "com.google.android.youtube:id/reel_player_page_container",
-            "com.google.android.youtube:id/reel_watch_fragment_root",
-            "com.google.android.youtube:id/shorts_container"
-        )
+    val TIKTOK_PACKAGES = setOf(
+        "com.zhiliaoapp.musically",
+        "com.ss.android.ugc.trill",
+        "com.zhiliaoapp.musically.go",
+        "com.ss.android.ugc.aweme"
+    )
 
-        private val INSTAGRAM_REEL_ID_SUBSTRINGS = listOf(
-            "clips_viewer",
-            "clips_swipe"
-        )
+    val WATCHED_PACKAGES: Set<String> = TIKTOK_PACKAGES + INSTAGRAM_PACKAGE + YOUTUBE_PACKAGE
 
-        private val YOUTUBE_SHORTS_ID_SUBSTRINGS = listOf(
-            ":id/reel_",
-            "reel_player",
-            "reel_recycler",
-            "reel_watch",
-            "shorts_",
-            "reel_time_bar",
-            "reel_progress",
-            "reel_rhs",
-            "reel_dyn"
-        )
+    private val INSTAGRAM_EXCLUSION_ENTRIES = setOf(
+        "direct_inbox_action_bar",
+        "inbox_refreshable_thread_list_recyclerview",
+        "message_thread_container",
+        "row_thread_composer_container"
+    )
+
+    private val YOUTUBE_SHORTS_ENTRIES = setOf(
+        "reel_watch_player",
+        "reel_player_page_container",
+        "reel_recycler"
+    )
+
+    fun entry(viewId: String): String = viewId.substringAfter(":id/")
+
+    fun watchedTargetFor(packageName: String): ShortFormTarget? = when {
+        packageName == INSTAGRAM_PACKAGE -> ShortFormTarget.INSTAGRAM_REELS
+        packageName == YOUTUBE_PACKAGE -> ShortFormTarget.YOUTUBE_SHORTS
+        packageName in TIKTOK_PACKAGES -> ShortFormTarget.TIKTOK
+        else -> null
     }
 
-    fun evaluateWindow(snapshot: WindowSnapshot): DetectionResult {
-        val pkg = snapshot.packageName
+    fun detect(snapshot: WindowSnapshot, fullAppTargets: Set<ShortFormTarget>): Detection {
+        val watched = watchedTargetFor(snapshot.packageName)
+            ?: return Detection(null, null, "unwatched")
 
-        if (pkg in TIKTOK_PACKAGES) {
-            return DetectionResult(
-                isShortForm = true,
-                target = ShortFormTarget.TIKTOK,
-                matchedSignal = "package:$pkg"
-            )
+        if (watched == ShortFormTarget.TIKTOK) return Detection(watched, watched, "tiktok")
+        if (watched in fullAppTargets) return Detection(watched, watched, "full-app")
+
+        return when (watched) {
+            ShortFormTarget.INSTAGRAM_REELS -> detectInstagram(snapshot, watched)
+            ShortFormTarget.YOUTUBE_SHORTS -> detectYouTube(snapshot, watched)
+            ShortFormTarget.TIKTOK -> Detection(watched, watched, "tiktok")
         }
-
-        if (pkg == "com.instagram.android") {
-            val hasSafeNonReelId = snapshot.viewIds.any { id ->
-                val lower = id.lowercase()
-                lower.contains("direct_thread") ||
-                    lower.contains("row_inbox") ||
-                    lower.contains("message_list") ||
-                    lower.contains("reel_viewer") ||
-                    lower.contains("story_viewer") ||
-                    lower.contains("reel_tray") ||
-                    lower.contains("feed_timeline") ||
-                    lower.contains("main_feed") ||
-                    id in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS
-            }
-            if (hasSafeNonReelId) {
-                return DetectionResult(isShortForm = false)
-            }
-
-            if (isInstagramNonReelsTabSelected(snapshot.selectedNodeLabels)) {
-                return DetectionResult(isShortForm = false)
-            }
-
-            val matchedId = snapshot.viewIds.firstOrNull { id ->
-                val lower = id.lowercase()
-                id in INSTAGRAM_REEL_VIEW_IDS ||
-                    id in customReelViewIds ||
-                    INSTAGRAM_REEL_ID_SUBSTRINGS.any { lower.contains(it) }
-            }
-            if (matchedId != null) {
-                return DetectionResult(
-                    isShortForm = true,
-                    target = ShortFormTarget.INSTAGRAM_REELS,
-                    matchedSignal = matchedId
-                )
-            }
-
-            val matchedSelectedLabel = snapshot.selectedNodeLabels.firstOrNull { label ->
-                val lower = label.lowercase().trim()
-                lower == "reels" || lower.startsWith("reels,") || lower.startsWith("reels ")
-            }
-            if (matchedSelectedLabel != null) {
-                return DetectionResult(
-                    isShortForm = true,
-                    target = ShortFormTarget.INSTAGRAM_REELS,
-                    matchedSignal = "selectedTab:$matchedSelectedLabel"
-                )
-            }
-
-            return DetectionResult(isShortForm = false)
-        }
-
-        if (pkg == "com.google.android.youtube") {
-            val hasYoutubeNormalWatchPlayer = snapshot.viewIds.any { id ->
-                val lower = id.lowercase()
-                lower.contains("watch_player") || lower.contains("player_fragment")
-            }
-
-            val matchedId = snapshot.viewIds.firstOrNull { id ->
-                val lower = id.lowercase()
-                id in YOUTUBE_SHORTS_VIEW_IDS ||
-                    id in customReelViewIds ||
-                    YOUTUBE_SHORTS_ID_SUBSTRINGS.any { lower.contains(it) }
-            }
-            if (matchedId != null) {
-                return DetectionResult(
-                    isShortForm = true,
-                    target = ShortFormTarget.YOUTUBE_SHORTS,
-                    matchedSignal = matchedId
-                )
-            }
-
-            val matchedSelectedLabel = snapshot.selectedNodeLabels.firstOrNull { label ->
-                val lower = label.lowercase().trim()
-                lower == "shorts" || lower.startsWith("shorts,") || lower.startsWith("shorts ")
-            }
-            if (matchedSelectedLabel != null) {
-                return DetectionResult(
-                    isShortForm = true,
-                    target = ShortFormTarget.YOUTUBE_SHORTS,
-                    matchedSignal = "selectedTab:$matchedSelectedLabel"
-                )
-            }
-
-            if (!hasYoutubeNormalWatchPlayer) {
-                val matchedDesc = snapshot.contentDescriptions.firstOrNull { desc ->
-                    val lower = desc.lowercase()
-                    lower.contains("remezclar este short") ||
-                        lower.contains("remix this short") ||
-                        lower.contains("usar este sonido") ||
-                        lower.contains("use this sound") ||
-                        lower.contains("reproductor de shorts") ||
-                        lower.contains("shorts player")
-                }
-                if (matchedDesc != null) {
-                    return DetectionResult(
-                        isShortForm = true,
-                        target = ShortFormTarget.YOUTUBE_SHORTS,
-                        matchedSignal = "contentDesc:$matchedDesc"
-                    )
-                }
-            }
-
-            return DetectionResult(isShortForm = false)
-        }
-
-        return DetectionResult(isShortForm = false)
     }
 
-    fun isExplicitNonShortFormInTargetApp(snapshot: WindowSnapshot): Boolean {
-        if (snapshot.packageName == "com.instagram.android") {
-            val hasSafeNonReelId = snapshot.viewIds.any { id ->
-                val lower = id.lowercase()
-                lower.contains("direct_thread") ||
-                    lower.contains("row_inbox") ||
-                    lower.contains("message_list") ||
-                    lower.contains("reel_viewer") ||
-                    lower.contains("story_viewer") ||
-                    lower.contains("reel_tray") ||
-                    lower.contains("feed_timeline") ||
-                    lower.contains("main_feed") ||
-                    id in INSTAGRAM_SAFE_NON_REEL_VIEW_IDS
+    private fun detectInstagram(snapshot: WindowSnapshot, watched: ShortFormTarget): Detection {
+        var tallPager = false
+        var tallMedia = false
+        var reelsTabSelected = false
+        for (node in snapshot.nodes) {
+            val id = node.viewId ?: continue
+            val e = entry(id)
+            if (e.startsWith("reel_viewer")) return Detection(null, watched, "ig-exclusion:stories")
+            if (e in INSTAGRAM_EXCLUSION_ENTRIES) return Detection(null, watched, "ig-exclusion:$e")
+            when (e) {
+                "clips_viewer_view_pager" -> if (node.heightFraction >= TALL) tallPager = true
+                "clips_single_media_component" -> if (node.heightFraction >= TALL) tallMedia = true
+                "clips_tab" -> if (node.selected) reelsTabSelected = true
             }
-            if (hasSafeNonReelId) return true
-
-            if (isInstagramNonReelsTabSelected(snapshot.selectedNodeLabels)) return true
-
-            return false
         }
-
-        if (snapshot.packageName == "com.google.android.youtube") {
-            val hasNormalPlayerId = snapshot.viewIds.any { id ->
-                val lower = id.lowercase()
-                lower.contains("watch_player") || lower.contains("player_fragment")
-            }
-            if (hasNormalPlayerId) return true
-
-            val hasNonShortsTabSelected = snapshot.selectedNodeLabels.any { label ->
-                val lower = label.lowercase().trim()
-                lower.contains("home") || lower.contains("inicio") ||
-                    lower.contains("subscriptions") || lower.contains("suscripciones") ||
-                    lower.contains("you") || lower.contains("tú") ||
-                    lower.contains("biblioteca") || lower.contains("library")
-            }
-            if (hasNonShortsTabSelected) return true
-
-            return false
+        return if (tallPager && (tallMedia || reelsTabSelected)) {
+            Detection(watched, watched, if (tallMedia) "ig-reels:media" else "ig-reels:tab")
+        } else {
+            Detection(null, watched, "ig-none")
         }
-
-        return false
     }
 
-    private fun isInstagramNonReelsTabSelected(selectedNodeLabels: Set<String>): Boolean {
-        val hasReelsSelected = selectedNodeLabels.any { label ->
-            val lower = label.lowercase().trim()
-            lower == "reels" || lower.startsWith("reels,") || lower.startsWith("reels ")
+    private fun detectYouTube(snapshot: WindowSnapshot, watched: ShortFormTarget): Detection {
+        val match = snapshot.nodes.firstOrNull { node ->
+            val id = node.viewId
+            id != null && node.heightFraction >= TALL && entry(id) in YOUTUBE_SHORTS_ENTRIES
         }
-        if (hasReelsSelected) return false
-
-        return selectedNodeLabels.any { label ->
-            val lower = label.lowercase().trim()
-            lower == "home" || lower == "inicio" ||
-                lower.startsWith("home,") || lower.startsWith("inicio,") ||
-                lower == "search and explore" || lower == "buscar y explorar" ||
-                lower.startsWith("search and explore,") || lower.startsWith("buscar y explorar,") ||
-                lower == "explore" || lower == "explorar" ||
-                lower.startsWith("explore,") || lower.startsWith("explorar,") ||
-                lower == "search" || lower == "buscar" ||
-                lower.startsWith("search,") || lower.startsWith("buscar,") ||
-                lower == "profile" || lower == "perfil" ||
-                lower.startsWith("profile,") || lower.startsWith("perfil,")
+        return if (match != null) {
+            Detection(watched, watched, "yt-shorts:${entry(match.viewId!!)}")
+        } else {
+            Detection(null, watched, "yt-none")
         }
     }
 }

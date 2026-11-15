@@ -57,16 +57,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.scrolless.app.core.AppBlockScope
+import com.scrolless.app.core.ProtectionConfig
 import com.scrolless.app.core.ProtectionMode
-import com.scrolless.app.core.SessionAndStreakManager
-import com.scrolless.app.core.SessionAndStreakState
+import com.scrolless.app.core.RuntimeState
+import com.scrolless.app.core.SessionController
 import com.scrolless.app.core.ShortFormTarget
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
 fun DashboardScreen(
-    state: SessionAndStreakState,
+    config: ProtectionConfig,
+    runtime: RuntimeState,
     isServiceActive: Boolean,
     lang: String,
     isDark: Boolean,
@@ -75,11 +78,12 @@ fun DashboardScreen(
     onSelectMode: (ProtectionMode) -> Unit,
     onCustomMinutesApply: (Int) -> Unit,
     onToggleTarget: (ShortFormTarget) -> Unit,
+    onSetScope: (ShortFormTarget, AppBlockScope) -> Unit,
     onOpenAccessibilitySettings: () -> Unit
 ) {
     val palette = LocalPlayaPalette.current
     val isEs = lang == "es"
-    val accentColor = when (state.mode) {
+    val accentColor = when (config.mode) {
         ProtectionMode.MINDFUL_BUDGET -> palette.success
         ProtectionMode.STRICT_BUDGET -> palette.warning
         ProtectionMode.SURGICAL_BLOCK -> palette.danger
@@ -121,14 +125,15 @@ fun DashboardScreen(
 
             // 3. Hero Card: Architectural Radial Time Dial + Daily Budget
             TimeBudgetHeroCard(
-                state = state,
+                config = config,
+                runtime = runtime,
                 isEs = isEs,
                 accentColor = accentColor
             )
 
             // 4. Flat Bento Grid: Streak Monument + Impulses & Recovered Hours
             StreakAndMetricsBento(
-                state = state,
+                state = runtime,
                 isEs = isEs
             )
 
@@ -136,17 +141,17 @@ fun DashboardScreen(
             SectionHeader(
                 title = if (isEs) "PROTOCOLO DE INTERVENCIÓN" else "INTERVENTION PROTOCOL"
             )
-            val isCustomSelected = !(state.mode == ProtectionMode.MINDFUL_BUDGET && state.dailyLimitSeconds == 15 * 60) &&
-                !(state.mode == ProtectionMode.STRICT_BUDGET && state.dailyLimitSeconds == 5 * 60) &&
-                !(state.mode == ProtectionMode.SURGICAL_BLOCK || state.dailyLimitSeconds == 0)
+            val isCustomSelected = !(config.mode == ProtectionMode.MINDFUL_BUDGET && config.dailyLimitSeconds == 15 * 60) &&
+                !(config.mode == ProtectionMode.STRICT_BUDGET && config.dailyLimitSeconds == 5 * 60) &&
+                !(config.mode == ProtectionMode.SURGICAL_BLOCK || config.dailyLimitSeconds == 0)
 
             ModeSelectorStack(
-                state = state,
+                state = config,
                 isEs = isEs,
                 onSelectMode = onSelectMode
             )
             CustomMinutesCard(
-                currentMinutes = state.dailyLimitSeconds / 60,
+                currentMinutes = config.dailyLimitSeconds / 60,
                 isCustomSelected = isCustomSelected,
                 isEs = isEs,
                 onApplyMinutes = onCustomMinutesApply
@@ -157,9 +162,11 @@ fun DashboardScreen(
                 title = if (isEs) "COBERTURA QUIRÚRGICA ACTIVA" else "ACTIVE SURGICAL TARGETS"
             )
             SurgicalTargetsPanel(
-                enabledTargets = state.enabledTargets,
+                enabledTargets = config.enabledTargets,
+                fullAppTargets = config.fullAppTargets,
                 isEs = isEs,
-                onToggleTarget = onToggleTarget
+                onToggleTarget = onToggleTarget,
+                onSetScope = onSetScope
             )
         }
     }
@@ -325,13 +332,16 @@ private fun ServiceOnboardingBanner(
 
 @Composable
 private fun TimeBudgetHeroCard(
-    state: SessionAndStreakState,
+    config: ProtectionConfig,
+    runtime: RuntimeState,
     isEs: Boolean,
     accentColor: Color
 ) {
     val palette = LocalPlayaPalette.current
+    val usageRatio = SessionController.usageRatio(config, runtime)
+    val remainingSeconds = SessionController.remainingSeconds(config, runtime)
     val animatedProgress by animateFloatAsState(
-        targetValue = state.usageRatio.coerceIn(0f, 1f),
+        targetValue = usageRatio.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 600),
         label = "dialProgress"
     )
@@ -357,30 +367,30 @@ private fun TimeBudgetHeroCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
+                    text = if (config.mode == ProtectionMode.SURGICAL_BLOCK) {
                         if (isEs) "MODO BLOQUEO TOTAL" else "ZERO SCROLL MODE"
                     } else {
                         if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE"
                     },
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (state.mode == ProtectionMode.SURGICAL_BLOCK) palette.danger else palette.textSecondary,
+                    color = if (config.mode == ProtectionMode.SURGICAL_BLOCK) palette.danger else palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = formatMinSec(state.remainingSecondsToday),
+                    text = formatMinSec(remainingSeconds),
                     style = MaterialTheme.typography.displayLarge,
                     color = palette.textPrimary,
                     maxLines = 1
                 )
                 Text(
-                    text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
+                    text = if (config.mode == ProtectionMode.SURGICAL_BLOCK) {
                         if (isEs) "0s permitidos en Reels, Shorts y TikTok" else "0s allowed in Reels, Shorts & TikTok"
                     } else {
                         if (isEs) {
-                            "${formatMinSec(state.activeReelSecondsToday)} consumidos de ${formatMinSec(state.dailyLimitSeconds)}"
+                            "${formatMinSec(runtime.activeSecondsToday)} consumidos de ${formatMinSec(config.dailyLimitSeconds)}"
                         } else {
-                            "${formatMinSec(state.activeReelSecondsToday)} used of ${formatMinSec(state.dailyLimitSeconds)}"
+                            "${formatMinSec(runtime.activeSecondsToday)} used of ${formatMinSec(config.dailyLimitSeconds)}"
                         }
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -432,7 +442,7 @@ private fun TimeBudgetHeroCard(
                     )
 
                     // Active arc
-                    val sweep = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
+                    val sweep = if (config.mode == ProtectionMode.SURGICAL_BLOCK) {
                         360f
                     } else {
                         (1f - animatedProgress) * 360f
@@ -449,13 +459,13 @@ private fun TimeBudgetHeroCard(
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val pctRemaining = if (state.mode == ProtectionMode.SURGICAL_BLOCK) {
+                    val pctRemaining = if (config.mode == ProtectionMode.SURGICAL_BLOCK) {
                         0
                     } else {
-                        ((1f - state.usageRatio) * 100).toInt().coerceIn(0, 100)
+                        ((1f - usageRatio) * 100).toInt().coerceIn(0, 100)
                     }
                     Text(
-                        text = if (state.mode == ProtectionMode.SURGICAL_BLOCK) "0%" else "$pctRemaining%",
+                        text = if (config.mode == ProtectionMode.SURGICAL_BLOCK) "0%" else "$pctRemaining%",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Normal,
                         color = palette.textPrimary
@@ -498,7 +508,7 @@ private fun TimeBudgetHeroCard(
 
 @Composable
 private fun StreakAndMetricsBento(
-    state: SessionAndStreakState,
+    state: RuntimeState,
     isEs: Boolean
 ) {
     val palette = LocalPlayaPalette.current
@@ -621,7 +631,7 @@ private fun StreakAndMetricsBento(
             }
         }
 
-        // 2-Column Bento Row: Impulses Stopped & Recovered Time
+        // 2-Column Bento Row: Impulses Stopped & measured short-form time (real history, no estimates)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -637,9 +647,9 @@ private fun StreakAndMetricsBento(
             )
             BentoMetricTile(
                 modifier = Modifier.weight(1f),
-                eyebrow = if (isEs) "RECUPERADO (7D)" else "RECOVERED (7D)",
-                bigValue = "${SessionAndStreakManager.estimateSavedHours(state.weeklyInterceptions)} h",
-                caption = if (isEs) "estimado en los últimos 7 días" else "estimated over the last 7 days",
+                eyebrow = if (isEs) "EN REELS · 7 DÍAS" else "SHORT-FORM · 7 DAYS",
+                bigValue = "${SessionController.secondsLast7Days(state) / 60} min",
+                caption = if (isEs) "tiempo real medido en formato corto" else "measured time in short-form feeds",
                 accentDotColor = palette.success
             )
         }
@@ -707,7 +717,7 @@ private fun BentoMetricTile(
 
 @Composable
 private fun ModeSelectorStack(
-    state: SessionAndStreakState,
+    state: ProtectionConfig,
     isEs: Boolean,
     onSelectMode: (ProtectionMode) -> Unit
 ) {
@@ -947,9 +957,15 @@ private fun CustomMinutesCard(
 @Composable
 private fun SurgicalTargetsPanel(
     enabledTargets: Set<ShortFormTarget>,
+    fullAppTargets: Set<ShortFormTarget>,
     isEs: Boolean,
-    onToggleTarget: (ShortFormTarget) -> Unit
+    onToggleTarget: (ShortFormTarget) -> Unit,
+    onSetScope: (ShortFormTarget, AppBlockScope) -> Unit
 ) {
+    val igEnabled = ShortFormTarget.INSTAGRAM_REELS in enabledTargets
+    val igFull = ShortFormTarget.INSTAGRAM_REELS in fullAppTargets
+    val ytEnabled = ShortFormTarget.YOUTUBE_SHORTS in enabledTargets
+    val ytFull = ShortFormTarget.YOUTUBE_SHORTS in fullAppTargets
     val palette = LocalPlayaPalette.current
     Column(
         modifier = Modifier
@@ -960,18 +976,42 @@ private fun SurgicalTargetsPanel(
             .padding(horizontal = 18.dp, vertical = 6.dp)
     ) {
         SurgicalTargetRow(
-            appTitle = "Instagram Reels",
-            allowedScope = if (isEs) "DMs, historias y feed libres" else "DMs, stories & feed unrestricted",
-            enabled = ShortFormTarget.INSTAGRAM_REELS in enabledTargets,
+            appTitle = if (igEnabled && igFull) "Instagram" else "Instagram Reels",
+            allowedScope = when {
+                igEnabled && igFull ->
+                    if (isEs) "Bloquea Instagram entero, también DMs e historias" else "Blocks all of Instagram, including DMs and stories"
+                else -> if (isEs) "DMs, historias y feed libres" else "DMs, stories & feed unrestricted"
+            },
+            enabled = igEnabled,
             onToggle = { onToggleTarget(ShortFormTarget.INSTAGRAM_REELS) }
         )
+        if (igEnabled) {
+            ScopeSegmentedControl(
+                surgicalLabel = if (isEs) "Solo Reels" else "Reels only",
+                fullAppLabel = if (isEs) "App completa" else "Whole app",
+                fullApp = igFull,
+                onSelect = { scope -> onSetScope(ShortFormTarget.INSTAGRAM_REELS, scope) }
+            )
+        }
         HorizontalDivider(thickness = 1.dp, color = palette.borderColor)
         SurgicalTargetRow(
-            appTitle = "YouTube Shorts",
-            allowedScope = if (isEs) "Videos largos y búsquedas libres" else "Long-form videos & search unrestricted",
-            enabled = ShortFormTarget.YOUTUBE_SHORTS in enabledTargets,
+            appTitle = if (ytEnabled && ytFull) "YouTube" else "YouTube Shorts",
+            allowedScope = when {
+                ytEnabled && ytFull ->
+                    if (isEs) "Bloquea YouTube entero, también videos largos" else "Blocks all of YouTube, including long videos"
+                else -> if (isEs) "Videos largos y búsquedas libres" else "Long-form videos & search unrestricted"
+            },
+            enabled = ytEnabled,
             onToggle = { onToggleTarget(ShortFormTarget.YOUTUBE_SHORTS) }
         )
+        if (ytEnabled) {
+            ScopeSegmentedControl(
+                surgicalLabel = if (isEs) "Solo Shorts" else "Shorts only",
+                fullAppLabel = if (isEs) "App completa" else "Whole app",
+                fullApp = ytFull,
+                onSelect = { scope -> onSetScope(ShortFormTarget.YOUTUBE_SHORTS, scope) }
+            )
+        }
         HorizontalDivider(thickness = 1.dp, color = palette.borderColor)
         SurgicalTargetRow(
             appTitle = "TikTok",
@@ -1047,6 +1087,68 @@ private fun SurgicalTargetRow(
                     .background(if (enabled) palette.bgColor else palette.textSecondary)
             )
         }
+    }
+}
+
+/** Compact two-segment scope selector: surgical (only the short-form tab) vs. the whole app. */
+@Composable
+private fun ScopeSegmentedControl(
+    surgicalLabel: String,
+    fullAppLabel: String,
+    fullApp: Boolean,
+    onSelect: (AppBlockScope) -> Unit
+) {
+    val palette = LocalPlayaPalette.current
+    Row(
+        modifier = Modifier
+            .padding(bottom = 14.dp)
+            .fillMaxWidth()
+            .height(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(palette.bgColor)
+            .border(1.dp, palette.borderColor, RoundedCornerShape(10.dp))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        ScopeSegment(
+            modifier = Modifier.weight(1f),
+            label = surgicalLabel,
+            selected = !fullApp,
+            onClick = { onSelect(AppBlockScope.SURGICAL) }
+        )
+        ScopeSegment(
+            modifier = Modifier.weight(1f),
+            label = fullAppLabel,
+            selected = fullApp,
+            onClick = { onSelect(AppBlockScope.FULL_APP) }
+        )
+    }
+}
+
+@Composable
+private fun ScopeSegment(
+    modifier: Modifier,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val palette = LocalPlayaPalette.current
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(7.dp))
+            .background(if (selected) palette.textPrimary else Color.Transparent)
+            .clickable(enabled = !selected) { onClick() }
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+            color = if (selected) palette.bgColor else palette.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
