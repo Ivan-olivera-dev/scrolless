@@ -40,6 +40,11 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        // LocalStoreMigrationTest builds a fake Context on top of the android.jar stubs.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

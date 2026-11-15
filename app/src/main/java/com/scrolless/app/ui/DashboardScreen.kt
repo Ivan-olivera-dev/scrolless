@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -48,21 +51,26 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.AppBlockScope
+import com.scrolless.app.core.DayStatus
 import com.scrolless.app.core.ProtectionConfig
 import com.scrolless.app.core.ProtectionMode
 import com.scrolless.app.core.RuntimeState
 import com.scrolless.app.core.SessionController
 import com.scrolless.app.core.ShortFormTarget
+import java.time.LocalDate
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -89,7 +97,7 @@ fun DashboardScreen(
         ProtectionMode.SURGICAL_BLOCK -> palette.danger
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
@@ -97,6 +105,8 @@ fun DashboardScreen(
             .background(palette.bgColor),
         contentAlignment = Alignment.TopCenter
     ) {
+        // Screen-width breakpoint (320dp phones vs. >= 360dp phones).
+        val isRoomy = maxWidth >= 360.dp
         Column(
             modifier = Modifier
                 .widthIn(max = 460.dp)
@@ -128,12 +138,14 @@ fun DashboardScreen(
                 config = config,
                 runtime = runtime,
                 isEs = isEs,
-                accentColor = accentColor
+                accentColor = accentColor,
+                dialSize = if (isRoomy) 92.dp else 76.dp
             )
 
             // 4. Flat Bento Grid: Streak Monument + Impulses & Recovered Hours
             StreakAndMetricsBento(
                 state = runtime,
+                config = config,
                 isEs = isEs
             )
 
@@ -182,6 +194,15 @@ private fun TopBar(
     onToggleTheme: () -> Unit
 ) {
     val palette = LocalPlayaPalette.current
+    val statusColor = if (isServiceActive) accentColor else palette.danger
+    val statusLabel = if (isServiceActive) {
+        if (isEs) "ACTIVO" else "ACTIVE"
+    } else {
+        if (isEs) "PAUSADO" else "PAUSED"
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    // The full status pill only when there is room; otherwise just the coloured dot.
+    val showPill = maxWidth >= 360.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -197,41 +218,58 @@ private fun TopBar(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             ScrollessLogoMark(size = 28.dp)
-            Text(
+            // Weighted (measured last) so the status pill/dot and the buttons never shrink.
+            FitSingleLineText(
                 text = "scrolless",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = (-1).sp,
-                color = palette.textPrimary
+                style = TextStyle(
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Light,
+                    letterSpacing = (-1).sp
+                ),
+                color = palette.textPrimary,
+                minFontSize = 16.sp,
+                modifier = Modifier.weight(1f, fill = false)
             )
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(palette.surfaceColor)
-                    .border(1.dp, palette.borderColor, RoundedCornerShape(999.dp))
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+            if (showPill) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(palette.surfaceColor)
+                        .border(1.dp, palette.borderColor, RoundedCornerShape(999.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(if (isServiceActive) accentColor else palette.danger)
-                    )
-                    Text(
-                        text = if (isServiceActive) {
-                            if (isEs) "ACTIVO" else "ACTIVE"
-                        } else {
-                            if (isEs) "PAUSADO" else "PAUSED"
-                        },
-                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                        color = palette.textSecondary,
-                        maxLines = 1
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(statusColor)
+                        )
+                        Text(
+                            text = statusLabel,
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
+                            color = palette.textSecondary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
+            } else {
+                val dotDescription = if (isServiceActive) {
+                    if (isEs) "Activo" else "Active"
+                } else {
+                    if (isEs) "Pausado" else "Paused"
+                }
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(statusColor)
+                        .semantics { contentDescription = dotDescription }
+                )
             }
         }
 
@@ -241,7 +279,7 @@ private fun TopBar(
         ) {
             Box(
                 modifier = Modifier
-                    .height(34.dp)
+                    .heightIn(min = 34.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .background(palette.surfaceColor)
                     .border(1.dp, palette.borderColor, RoundedCornerShape(999.dp))
@@ -272,6 +310,40 @@ private fun TopBar(
             }
         }
     }
+    }
+}
+
+/**
+ * Single-line text that steps its font size down (never below [minFontSize]) until it fits the
+ * available width, instead of ellipsizing. Used for numbers and the wordmark, which must not wrap.
+ */
+@Composable
+private fun FitSingleLineText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    minFontSize: TextUnit,
+    modifier: Modifier = Modifier
+) {
+    // Plain Text (not BoxWithConstraints/SubcomposeLayout) so it stays usable inside
+    // IntrinsicSize-measured rows such as the bento tiles.
+    var fontSize by remember(text, style) { mutableStateOf(style.fontSize) }
+    var settled by remember(text, style) { mutableStateOf(false) }
+    Text(
+        text = text,
+        style = style.copy(fontSize = fontSize),
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        modifier = modifier.drawWithContent { if (settled) drawContent() },
+        onTextLayout = { result ->
+            if (result.didOverflowWidth && fontSize.value > minFontSize.value) {
+                fontSize = (fontSize.value - 1f).coerceAtLeast(minFontSize.value).sp
+            } else {
+                settled = true
+            }
+        }
+    )
 }
 
 @Composable
@@ -335,9 +407,13 @@ private fun TimeBudgetHeroCard(
     config: ProtectionConfig,
     runtime: RuntimeState,
     isEs: Boolean,
-    accentColor: Color
+    accentColor: Color,
+    dialSize: Dp
 ) {
     val palette = LocalPlayaPalette.current
+    // Every enabled watched target blocks its whole app: the DMs/long-video pause never applies.
+    val allWholeApp = config.enabledTargets.isNotEmpty() &&
+        config.enabledTargets.all { config.scopeOf(it) == AppBlockScope.FULL_APP }
     val usageRatio = SessionController.usageRatio(config, runtime)
     val remainingSeconds = SessionController.remainingSeconds(config, runtime)
     val animatedProgress by animateFloatAsState(
@@ -373,15 +449,13 @@ private fun TimeBudgetHeroCard(
                         if (isEs) "PRESUPUESTO EN PESTAÑA HOY" else "TODAY'S TAB ALLOWANCE"
                     },
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (config.mode == ProtectionMode.SURGICAL_BLOCK) palette.danger else palette.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    color = if (config.mode == ProtectionMode.SURGICAL_BLOCK) palette.danger else palette.textSecondary
                 )
-                Text(
+                FitSingleLineText(
                     text = formatMinSec(remainingSeconds),
                     style = MaterialTheme.typography.displayLarge,
                     color = palette.textPrimary,
-                    maxLines = 1
+                    minFontSize = 22.sp
                 )
                 Text(
                     text = if (config.mode == ProtectionMode.SURGICAL_BLOCK) {
@@ -394,15 +468,13 @@ private fun TimeBudgetHeroCard(
                         }
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    color = palette.textSecondary
                 )
             }
 
             // Custom Architectural Radial Dial
             Box(
-                modifier = Modifier.size(92.dp),
+                modifier = Modifier.size(dialSize),
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -487,14 +559,16 @@ private fun TimeBudgetHeroCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (isEs) "El reloj se pausa al salir a DMs o videos largos" else "Timer pauses immediately in DMs or long videos",
+                text = if (allWholeApp) {
+                    if (isEs) "El reloj corre solo mientras usás las apps bloqueadas" else "The timer runs only while you use the blocked apps"
+                } else {
+                    if (isEs) "El reloj se pausa al salir a DMs o videos largos" else "Timer pauses immediately in DMs or long videos"
+                },
                 modifier = Modifier
                     .weight(1f)
                     .padding(end = 12.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textSecondary
             )
             Box(
                 modifier = Modifier
@@ -509,15 +583,13 @@ private fun TimeBudgetHeroCard(
 @Composable
 private fun StreakAndMetricsBento(
     state: RuntimeState,
+    config: ProtectionConfig,
     isEs: Boolean
 ) {
     val palette = LocalPlayaPalette.current
-    val daysLabels = if (isEs) {
-        listOf("L", "M", "X", "J", "V", "S", "D")
-    } else {
-        listOf("M", "T", "W", "T", "F", "S", "S")
-    }
-    val completedInCycle = (state.streakDays % 7).let { if (it == 0 && state.streakDays > 0) 7 else it }
+    // The real last 7 calendar days ending today (oldest first).
+    val todayIso = LocalDate.now().toString()
+    val week = SessionController.lastSevenDays(state, config, todayIso)
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Full-width Streak Rhythm Card
@@ -544,11 +616,9 @@ private fun StreakAndMetricsBento(
                     Text(
                         text = if (isEs) "CONSTANCIA DIARIA" else "DAILY CONSISTENCY",
                         style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = palette.textSecondary
                     )
-                    Text(
+                    FitSingleLineText(
                         text = if (isEs) {
                             if (state.streakDays == 1) "1 día" else "${state.streakDays} días"
                         } else {
@@ -556,15 +626,12 @@ private fun StreakAndMetricsBento(
                         },
                         style = MaterialTheme.typography.headlineLarge,
                         color = palette.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        minFontSize = 18.sp
                     )
                     Text(
                         text = if (isEs) "cumpliendo tu margen diario" else "meeting your daily budget",
                         style = MaterialTheme.typography.bodySmall,
-                        color = palette.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        color = palette.textSecondary
                     )
                 }
 
@@ -599,16 +666,21 @@ private fun StreakAndMetricsBento(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                daysLabels.forEachIndexed { index, label ->
-                    val isFilled = index < completedInCycle
+                week.forEach { day ->
+                    val isFilled = day.status == DayStatus.WITHIN_LIMIT
+                    val isToday = day.status == DayStatus.TODAY
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (isFilled) palette.success.copy(alpha = 0.16f) else palette.bgColor)
                             .border(
-                                width = 1.dp,
-                                color = if (isFilled) palette.success else palette.borderColor,
+                                width = if (isToday) 1.5.dp else 1.dp,
+                                color = when {
+                                    isFilled -> palette.success
+                                    isToday -> palette.textSecondary
+                                    else -> palette.borderColor
+                                },
                                 shape = RoundedCornerShape(12.dp)
                             )
                             .padding(vertical = 10.dp),
@@ -619,39 +691,79 @@ private fun StreakAndMetricsBento(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(if (isFilled) palette.success else palette.borderColor)
+                                .then(
+                                    when {
+                                        isFilled -> Modifier.background(palette.success)
+                                        // Today is in progress: outline only.
+                                        isToday -> Modifier.border(1.dp, palette.textSecondary, CircleShape)
+                                        else -> Modifier.background(palette.borderColor)
+                                    }
+                                )
                         )
                         Text(
-                            text = label,
+                            text = SessionController.weekdayInitial(day.dayOfWeek, isEs),
                             style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                            color = if (isFilled) palette.textPrimary else palette.textSecondary
+                            color = if (isFilled || isToday) palette.textPrimary else palette.textSecondary,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
             }
         }
 
-        // 2-Column Bento Row: Impulses Stopped & measured short-form time (real history, no estimates)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            BentoMetricTile(
-                modifier = Modifier.weight(1f),
-                eyebrow = if (isEs) "IMPULSOS HOY" else "IMPULSES TODAY",
-                bigValue = "${state.interceptionsToday}",
-                caption = if (isEs) "aperturas automáticas cortadas hoy" else "automatic opens caught today",
-                accentDotColor = palette.warning
-            )
-            BentoMetricTile(
-                modifier = Modifier.weight(1f),
-                eyebrow = if (isEs) "EN REELS · 7 DÍAS" else "SHORT-FORM · 7 DAYS",
-                bigValue = "${SessionController.secondsLast7Days(state) / 60} min",
-                caption = if (isEs) "tiempo real medido en formato corto" else "measured time in short-form feeds",
-                accentDotColor = palette.success
-            )
+        // Bento metrics: Impulses Stopped & measured short-form time (real history, no estimates).
+        // Side by side only when there is room; stacked full width on narrow screens.
+        val impulsesEyebrow = if (isEs) "IMPULSOS HOY" else "IMPULSES TODAY"
+        val impulsesValue = "${state.interceptionsToday}"
+        val impulsesCaption = if (isEs) "aperturas automáticas cortadas hoy" else "automatic opens caught today"
+        val weekEyebrow = if (isEs) "EN REELS · 7 DÍAS" else "SHORT-FORM · 7 DAYS"
+        val weekValue = "${SessionController.secondsLast7Days(state) / 60} min"
+        val weekCaption = if (isEs) "tiempo real medido en formato corto" else "measured time in short-form feeds"
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth >= 340.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BentoMetricTile(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        eyebrow = impulsesEyebrow,
+                        bigValue = impulsesValue,
+                        caption = impulsesCaption,
+                        accentDotColor = palette.warning
+                    )
+                    BentoMetricTile(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        eyebrow = weekEyebrow,
+                        bigValue = weekValue,
+                        caption = weekCaption,
+                        accentDotColor = palette.success
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BentoMetricTile(
+                        modifier = Modifier.fillMaxWidth(),
+                        eyebrow = impulsesEyebrow,
+                        bigValue = impulsesValue,
+                        caption = impulsesCaption,
+                        accentDotColor = palette.warning
+                    )
+                    BentoMetricTile(
+                        modifier = Modifier.fillMaxWidth(),
+                        eyebrow = weekEyebrow,
+                        bigValue = weekValue,
+                        caption = weekCaption,
+                        accentDotColor = palette.success
+                    )
+                }
+            }
         }
     }
 }
@@ -667,7 +779,6 @@ private fun BentoMetricTile(
     val palette = LocalPlayaPalette.current
     Column(
         modifier = modifier
-            .fillMaxHeight()
             .clip(RoundedCornerShape(20.dp))
             .background(palette.surfaceColor)
             .border(1.dp, palette.borderColor, RoundedCornerShape(20.dp))
@@ -686,9 +797,7 @@ private fun BentoMetricTile(
                         .weight(1f)
                         .padding(end = 6.dp),
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                    color = palette.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    color = palette.textSecondary
                 )
                 Box(
                     modifier = Modifier
@@ -697,20 +806,18 @@ private fun BentoMetricTile(
                         .background(accentDotColor)
                 )
             }
-            Text(
+            FitSingleLineText(
                 text = bigValue,
                 style = MaterialTheme.typography.headlineLarge,
                 color = palette.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                minFontSize = 18.sp
             )
         }
         Text(
             text = caption,
+            modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.bodySmall,
-            color = palette.textSecondary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            color = palette.textSecondary
         )
     }
 }
@@ -728,7 +835,7 @@ private fun ModeSelectorStack(
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ModeOptionCard(
-            title = if (isEs) "Pausa Consciente · 15 min" else "Mindful Budget · 15 min",
+            title = if (isEs) "Pausa Consciente\u00A0· 15\u00A0min" else "Mindful Budget\u00A0· 15\u00A0min",
             subtitle = if (isEs) {
                 "Respiración de 10s antes de entrar y hasta 15 min diarios solo en pestaña."
             } else {
@@ -740,7 +847,7 @@ private fun ModeSelectorStack(
             onClick = { onSelectMode(ProtectionMode.MINDFUL_BUDGET) }
         )
         ModeOptionCard(
-            title = if (isEs) "Margen Estricto · 5 min" else "Strict Budget · 5 min",
+            title = if (isEs) "Margen Estricto\u00A0· 5\u00A0min" else "Strict Budget\u00A0· 5\u00A0min",
             subtitle = if (isEs) {
                 "Para días de foco profundo: solo 5 minutos acumulados en Reels o Shorts."
             } else {
@@ -752,7 +859,7 @@ private fun ModeSelectorStack(
             onClick = { onSelectMode(ProtectionMode.STRICT_BUDGET) }
         )
         ModeOptionCard(
-            title = if (isEs) "Bloqueo Total · 0 min" else "Zero Scroll · 0 min",
+            title = if (isEs) "Bloqueo Total\u00A0· 0\u00A0min" else "Zero Scroll\u00A0· 0\u00A0min",
             subtitle = if (isEs) {
                 "Corta cualquier Reel, Short o TikTok en el primer segundo sin desactivar tus chats."
             } else {
@@ -805,16 +912,12 @@ private fun ModeOptionCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                color = palette.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textPrimary
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textSecondary
             )
         }
         Box(
@@ -832,7 +935,8 @@ private fun ModeOptionCard(
                 text = badge,
                 style = MaterialTheme.typography.labelMedium,
                 color = if (selected) accentColor else palette.textSecondary,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -847,43 +951,32 @@ private fun CustomMinutesCard(
 ) {
     val palette = LocalPlayaPalette.current
     var inputText by remember(currentMinutes) { mutableStateOf(currentMinutes.toString()) }
+    val applyIfValid = {
+        val mins = inputText.toIntOrNull()
+        if (mins != null && mins in 0..300) {
+            onApplyMinutes(mins)
+        }
+    }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(palette.surfaceColor)
-            .border(
-                1.dp,
-                if (isCustomSelected) palette.success else palette.borderColor,
-                RoundedCornerShape(18.dp)
-            )
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    val labels: @Composable (Modifier) -> Unit = { modifier ->
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 8.dp),
+            modifier = modifier,
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
                 text = if (isEs) "Límite personalizado" else "Custom daily limit",
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = palette.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textPrimary
             )
             Text(
                 text = if (isEs) "Minutos al día (0 = bloqueo total)" else "Minutes/day (0 = zero-scroll)",
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textSecondary
             )
         }
+    }
 
+    val minutesInput: @Composable () -> Unit = {
         Box(
             modifier = Modifier
                 .width(68.dp)
@@ -914,32 +1007,22 @@ private fun CustomMinutesCard(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done
                 ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        val mins = inputText.toIntOrNull()
-                        if (mins != null && mins in 0..300) {
-                            onApplyMinutes(mins)
-                        }
-                    }
-                ),
+                keyboardActions = KeyboardActions(onDone = { applyIfValid() }),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp)
             )
         }
+    }
 
+    val applyButton: @Composable (Modifier) -> Unit = { modifier ->
         Box(
-            modifier = Modifier
-                .height(42.dp)
+            modifier = modifier
+                .heightIn(min = 42.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(palette.textPrimary)
-                .clickable {
-                    val mins = inputText.toIntOrNull()
-                    if (mins != null && mins in 0..300) {
-                        onApplyMinutes(mins)
-                    }
-                }
-                .padding(horizontal = 14.dp),
+                .clickable { applyIfValid() }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -948,8 +1031,51 @@ private fun CustomMinutesCard(
                     fontWeight = FontWeight.Medium,
                     color = palette.bgColor
                 ),
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false
             )
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(palette.surfaceColor)
+            .border(
+                1.dp,
+                if (isCustomSelected) palette.success else palette.borderColor,
+                RoundedCornerShape(18.dp)
+            )
+            .padding(16.dp)
+    ) {
+        // maxWidth is the card's inner width; 360dp refers to the card's available width.
+        if (maxWidth + 32.dp < 360.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                labels(Modifier.fillMaxWidth())
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    minutesInput()
+                    applyButton(Modifier.weight(1f))
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                labels(
+                    Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                )
+                minutesInput()
+                applyButton(Modifier)
+            }
         }
     }
 }
@@ -1053,16 +1179,12 @@ private fun SurgicalTargetRow(
             Text(
                 text = appTitle,
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium),
-                color = palette.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textPrimary
             )
             Text(
                 text = allowedScope,
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.textSecondary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                color = palette.textSecondary
             )
         }
 
@@ -1103,7 +1225,8 @@ private fun ScopeSegmentedControl(
         modifier = Modifier
             .padding(bottom = 14.dp)
             .fillMaxWidth()
-            .height(34.dp)
+            .heightIn(min = 34.dp)
+            .height(IntrinsicSize.Min)
             .clip(RoundedCornerShape(10.dp))
             .background(palette.bgColor)
             .border(1.dp, palette.borderColor, RoundedCornerShape(10.dp))
@@ -1139,15 +1262,14 @@ private fun ScopeSegment(
             .clip(RoundedCornerShape(7.dp))
             .background(if (selected) palette.textPrimary else Color.Transparent)
             .clickable(enabled = !selected) { onClick() }
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
             color = if (selected) palette.bgColor else palette.textSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            textAlign = TextAlign.Center
         )
     }
 }

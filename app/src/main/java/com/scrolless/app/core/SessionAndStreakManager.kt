@@ -30,6 +30,12 @@ data class ProtectionConfig(
 
 data class DayRecord(val dateIso: String, val seconds: Int, val interceptions: Int)
 
+/** Status of one cell in the 7-day rhythm strip. */
+enum class DayStatus { WITHIN_LIMIT, OVER_LIMIT, NO_RECORD, TODAY }
+
+/** One real calendar day of the strip; [dayOfWeek] is ISO (1 = Monday .. 7 = Sunday). */
+data class DayCell(val dateIso: String, val dayOfWeek: Int, val status: DayStatus)
+
 /** Runtime counters and session state. Written only by the accessibility service (or its fallback). */
 data class RuntimeState(
     val dayIso: String = "",
@@ -210,6 +216,30 @@ object SessionController {
     /** R8: today plus the previous 6 days. */
     fun secondsLast7Days(state: RuntimeState): Int =
         state.activeSecondsToday + windowHistory(state).sumOf { it.seconds }
+
+    /** The real last 7 calendar days ending [todayIso] (oldest first), classified against the daily limit. */
+    fun lastSevenDays(state: RuntimeState, config: ProtectionConfig, todayIso: String): List<DayCell> {
+        val today = parseDate(todayIso) ?: return emptyList()
+        val byDate = state.history.associateBy { it.dateIso }
+        return (HISTORY_DAYS - 1 downTo 0).map { offset ->
+            val date = today.minusDays(offset.toLong())
+            val iso = date.toString()
+            val record = byDate[iso]
+            val status = when {
+                offset == 0 -> DayStatus.TODAY
+                record == null -> DayStatus.NO_RECORD
+                record.seconds <= config.dailyLimitSeconds -> DayStatus.WITHIN_LIMIT
+                else -> DayStatus.OVER_LIMIT
+            }
+            DayCell(iso, date.dayOfWeek.value, status)
+        }
+    }
+
+    /** Weekday initial for an ISO day of week (1 = Monday). ES: L M X J V S D; EN: M T W T F S S. */
+    fun weekdayInitial(dayOfWeek: Int, isEs: Boolean): String {
+        val initials = if (isEs) "LMXJVSD" else "MTWTFSS"
+        return initials.getOrNull(dayOfWeek - 1)?.toString().orEmpty()
+    }
 
     fun interceptionsLast7Days(state: RuntimeState): Int =
         state.interceptionsToday + windowHistory(state).sumOf { it.interceptions }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,7 +50,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrolless.app.core.InterruptionReason
@@ -111,7 +111,13 @@ class InterruptionActivity : ComponentActivity() {
         val store = LocalStore(applicationContext)
         val targetId = currentIntent.getStringExtra("target_id")
         val target = targetId?.let { runCatching { ShortFormTarget.valueOf(it) }.getOrNull() }
-        val targetName = currentIntent.getStringExtra("target_name") ?: target?.displayName ?: "Reels / Shorts"
+        val wholeApp = currentIntent.getBooleanExtra("whole_app", false)
+        // Whole-app mode names the app itself (Instagram, YouTube, TikTok), not its Reels/Shorts tab.
+        val targetName = if (wholeApp && target != null) {
+            appNameOf(target)
+        } else {
+            currentIntent.getStringExtra("target_name") ?: target?.displayName ?: "Reels / Shorts"
+        }
         val reasonName = currentIntent.getStringExtra("reason_name") ?: InterruptionReason.MINDFUL_PAUSE_ON_ENTRY.name
         val canContinue = currentIntent.getBooleanExtra("can_continue", false)
         val remainingSec = currentIntent.getIntExtra("remaining_sec", 0)
@@ -126,6 +132,7 @@ class InterruptionActivity : ComponentActivity() {
             PlayaTheme(darkTheme = isDark) {
                 InterruptionScreen(
                     targetName = targetName,
+                    wholeApp = wholeApp,
                     reason = reason,
                     canContinue = canContinue,
                     remainingSec = remainingSec,
@@ -140,9 +147,16 @@ class InterruptionActivity : ComponentActivity() {
     }
 }
 
+private fun appNameOf(target: ShortFormTarget): String = when (target) {
+    ShortFormTarget.INSTAGRAM_REELS -> "Instagram"
+    ShortFormTarget.YOUTUBE_SHORTS -> "YouTube"
+    ShortFormTarget.TIKTOK -> "TikTok"
+}
+
 @Composable
 fun InterruptionScreen(
     targetName: String,
+    wholeApp: Boolean,
     reason: InterruptionReason,
     canContinue: Boolean,
     remainingSec: Int,
@@ -301,7 +315,13 @@ fun InterruptionScreen(
 
             val subtitle = when (reason) {
                 InterruptionReason.MINDFUL_PAUSE_ON_ENTRY ->
-                    if (isEs) {
+                    if (wholeApp) {
+                        if (isEs) {
+                            "Bloqueaste $targetName entero. Si seguís, corre tu margen diario."
+                        } else {
+                            "You blocked $targetName entirely. Continuing uses your daily budget."
+                        }
+                    } else if (isEs) {
                         "Tus mensajes directos y el resto de la app siguen libres. Si entrás a $targetName, correrá tu margen diario."
                     } else {
                         "Your direct messages and the rest of the app remain open. Entering $targetName starts your daily tab timer."
@@ -353,9 +373,7 @@ fun InterruptionScreen(
                     Text(
                         text = if (isEs) "RACHA ACTUAL" else "CURRENT STREAK",
                         style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
-                        color = palette.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = palette.textSecondary
                     )
                     Text(
                         text = if (isEs) {
@@ -364,9 +382,7 @@ fun InterruptionScreen(
                             if (streakDays == 1) "1 day" else "$streakDays days"
                         },
                         style = MaterialTheme.typography.bodyLarge,
-                        color = palette.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = palette.textPrimary
                     )
                 }
                 Column(
@@ -377,15 +393,14 @@ fun InterruptionScreen(
                         text = if (isEs) "MARGEN HOY" else "LEFT TODAY",
                         style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
                         color = palette.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        textAlign = TextAlign.End
                     )
                     Text(
                         text = formatMinSec(remainingSec),
                         style = MaterialTheme.typography.bodyLarge,
                         color = ringColor,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        softWrap = false
                     )
                 }
             }
@@ -396,38 +411,38 @@ fun InterruptionScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
+                    .heightIn(min = 54.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(palette.textPrimary)
                     .clickable { onExitShortForm() }
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (isEs) "Volver atrás y proteger mi racha" else "Step back & protect my streak",
+                    text = if (isEs) "Volver al inicio y cuidar mi racha" else "Go home and keep my streak",
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium
                     ),
                     color = palette.bgColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    textAlign = TextAlign.Center,
+                    maxLines = 2
                 )
             }
 
             // Secondary Mindful Unlock (only if budget remains and countdown finished)
             if (canContinue) {
                 val unlockLabel = if (countdown > 0) {
-                    if (isEs) "Respirá ${countdown}s para desbloquear acceso temporal"
-                    else "Breathe ${countdown}s to unlock temporary access"
+                    if (isEs) "Respirá ${countdown}s para seguir"
+                    else "Breathe ${countdown}s to continue"
                 } else {
-                    if (isEs) "Continuar con mi margen disponible"
-                    else "Continue with my available budget"
+                    if (isEs) "Seguir con mi margen"
+                    else "Continue with my budget"
                 }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp)
+                        .heightIn(min = 46.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .border(
                             width = 1.dp,
@@ -435,15 +450,15 @@ fun InterruptionScreen(
                             shape = RoundedCornerShape(14.dp)
                         )
                         .clickable(enabled = countdown == 0) { onContinueMindfully() }
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = unlockLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (countdown == 0) palette.textPrimary else palette.textSecondary.copy(alpha = 0.5f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
                     )
                 }
             }

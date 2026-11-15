@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.scrolless.app.BuildConfig
+import com.scrolless.app.core.AppBlockScope
 import com.scrolless.app.core.Decision
 import com.scrolless.app.core.Detection
 import com.scrolless.app.core.DetectionEngine
@@ -183,6 +184,8 @@ class ScrollessAccessibilityService : AccessibilityService() {
             putExtra("reason_name", decision.reason.name)
             putExtra("can_continue", decision.canContinue)
             putExtra("remaining_sec", decision.remainingSecondsToday)
+            // Whole-app block (fullAppTargets or TikTok): the screen must not promise DMs stay free.
+            putExtra("whole_app", config.scopeOf(decision.target) == AppBlockScope.FULL_APP)
         }
         startActivity(intent)
     }
