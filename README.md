@@ -14,11 +14,30 @@
 Scrolless se distribuye solo por GitHub (sin Play Store ni F-Droid).
 
 1. **Descarga el APK** `scrolless-<versión>.apk` desde [GitHub Releases](../../releases/latest), **o** sigue este repositorio con [Obtainium](https://github.com/ImranR98/Obtainium) para recibir cada actualización automáticamente.
-2. Instálalo (Android te pedirá permitir instalar apps de esa fuente).
+2. Instálalo (Android te pedirá permitir instalar apps de esa fuente). Si aparece el aviso de **Play Protect** "puede solicitar acceso a datos sensibles" con un único botón *Entendido*, sigue [Si Play Protect bloquea la instalación](#si-play-protect-bloquea-la-instalación).
 3. **Activa el servicio de accesibilidad:** Ajustes → Accesibilidad → Apps instaladas (o *Servicios descargados*) → **Scrolless** → Activar.
 4. **Android 13 o superior:** si el interruptor aparece gris ("Ajuste restringido"), ve a Ajustes → Apps → Scrolless → menú ⋮ (arriba a la derecha) → **Permitir ajustes restringidos**, y repite el paso 3.
 
 Cada release incluye su `.sha256` y una atestación SLSA para verificar el origen (ver más abajo). Para publicar versiones nuevas, ver [RELEASING.md](RELEASING.md).
+
+### Si Play Protect bloquea la instalación
+
+La **protección mejorada contra el fraude** de Google Play Protect bloquea, sin opción de "instalar de todas formas", las apps descargadas desde el navegador, una app de mensajería o un gestor de archivos que piden el permiso de **Accesibilidad**. Scrolless lo necesita para saber si estás en Reels o en Shorts; no lee textos ni tiene permiso de Internet (ver [verificación](#cómo-verificar-que-scrolless-es-100-seguro-y-fiel-a-este-código)).
+
+Tienes dos formas de instalarla:
+
+**A. Pausar Play Protect durante la instalación** (desde el móvil)
+1. Abre **Play Store** → tu foto de perfil → **Play Protect** → ⚙️ (arriba a la derecha) → desactiva **Escanear apps con Play Protect**.
+2. Instala `scrolless-<versión>.apk`.
+3. Vuelve a activar **Escanear apps con Play Protect**.
+
+**B. Instalar con `adb`** (desde un ordenador, con la depuración USB o inalámbrica activada)
+
+```bash
+adb install scrolless-<versión>.apk
+```
+
+Las instalaciones por `adb` no pasan por este bloqueo ni por el de "ajuste restringido" del paso 4.
 
 ---
 
