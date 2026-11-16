@@ -334,9 +334,9 @@ fun InterruptionScreen(
                     }
                 InterruptionReason.SURGICAL_ZERO_TOLERANCE ->
                     if (isEs) {
-                        "El protocolo de Bloqueo Quirúrgico está activo. Hoy ya cortaste $interceptionsToday aperturas automáticas."
+                        "Tenés el bloqueo total activado. Hoy ya cortaste $interceptionsToday aperturas automáticas."
                     } else {
-                        "Zero-Scroll protocol is active. You have already stopped $interceptionsToday automatic opens today."
+                        "Zero scroll is on. You have already stopped $interceptionsToday automatic opens today."
                     }
             }
 

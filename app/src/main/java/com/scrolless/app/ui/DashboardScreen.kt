@@ -171,7 +171,7 @@ fun DashboardScreen(
 
             // 6. Surgical Target Matrix (Per-Platform Scope)
             SectionHeader(
-                title = if (isEs) "COBERTURA QUIRÚRGICA ACTIVA" else "ACTIVE SURGICAL TARGETS"
+                title = if (isEs) "APPS VIGILADAS" else "WATCHED APPS"
             )
             SurgicalTargetsPanel(
                 enabledTargets = config.enabledTargets,
