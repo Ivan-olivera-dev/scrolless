@@ -379,7 +379,7 @@ private fun ServiceOnboardingBanner(
         }
         Text(
             text = if (isEs) {
-                "Para distinguir entre un mensaje directo y la pestaña de Reels o Shorts sin acceso root, activá Scrolless en Accesibilidad."
+                "Para distinguir entre un mensaje directo y la pestaña de Reels o Shorts sin acceso root, activa Scrolless en Accesibilidad."
             } else {
                 "To distinguish between a direct message and the Reels or Shorts tab without root access, enable Scrolless in Accessibility."
             },
@@ -560,9 +560,9 @@ private fun TimeBudgetHeroCard(
         ) {
             Text(
                 text = if (allWholeApp) {
-                    if (isEs) "El reloj corre solo mientras usás las apps bloqueadas" else "The timer runs only while you use the blocked apps"
+                    if (isEs) "El reloj corre solo mientras usas las apps bloqueadas" else "The timer runs only while you use the blocked apps"
                 } else {
-                    if (isEs) "El reloj se pausa al salir a DMs o videos largos" else "Timer pauses immediately in DMs or long videos"
+                    if (isEs) "El reloj se pausa al salir a DMs o vídeos largos" else "Timer pauses immediately in DMs or long videos"
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -1124,8 +1124,8 @@ private fun SurgicalTargetsPanel(
             appTitle = if (ytEnabled && ytFull) "YouTube" else "YouTube Shorts",
             allowedScope = when {
                 ytEnabled && ytFull ->
-                    if (isEs) "Bloquea YouTube entero, también videos largos" else "Blocks all of YouTube, including long videos"
-                else -> if (isEs) "Videos largos y búsquedas libres" else "Long-form videos & search unrestricted"
+                    if (isEs) "Bloquea YouTube entero, también vídeos largos" else "Blocks all of YouTube, including long videos"
+                else -> if (isEs) "Vídeos largos y búsquedas libres" else "Long-form videos & search unrestricted"
             },
             enabled = ytEnabled,
             onToggle = { onToggleTarget(ShortFormTarget.YOUTUBE_SHORTS) }

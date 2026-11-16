@@ -306,7 +306,7 @@ fun InterruptionScreen(
             // Editorial Headline & Explanation
             val headline = when (reason) {
                 InterruptionReason.MINDFUL_PAUSE_ON_ENTRY ->
-                    if (isEs) "¿Entraste por elección o por inercia?" else "By choice or by habit?"
+                    if (isEs) "¿Has entrado por elección o por inercia?" else "By choice or by habit?"
                 InterruptionReason.DAILY_LIMIT_EXHAUSTED ->
                     if (isEs) "Presupuesto diario completado" else "Daily tab budget reached"
                 InterruptionReason.SURGICAL_ZERO_TOLERANCE ->
@@ -317,24 +317,24 @@ fun InterruptionScreen(
                 InterruptionReason.MINDFUL_PAUSE_ON_ENTRY ->
                     if (wholeApp) {
                         if (isEs) {
-                            "Bloqueaste $targetName entero. Si seguís, corre tu margen diario."
+                            "Has bloqueado $targetName entero. Si sigues, corre tu margen diario."
                         } else {
                             "You blocked $targetName entirely. Continuing uses your daily budget."
                         }
                     } else if (isEs) {
-                        "Tus mensajes directos y el resto de la app siguen libres. Si entrás a $targetName, correrá tu margen diario."
+                        "Tus mensajes directos y el resto de la app siguen libres. Si entras en $targetName, correrá tu margen diario."
                     } else {
                         "Your direct messages and the rest of the app remain open. Entering $targetName starts your daily tab timer."
                     }
                 InterruptionReason.DAILY_LIMIT_EXHAUSTED ->
                     if (isEs) {
-                        "Ya consumiste tu margen de hoy en pestañas de formato corto. Volvé atrás para proteger tu racha."
+                        "Ya has consumido tu margen de hoy en pestañas de formato corto. Vuelve atrás para proteger tu racha."
                     } else {
                         "You have used today's short-form tab allowance. Step back to keep your streak intact."
                     }
                 InterruptionReason.SURGICAL_ZERO_TOLERANCE ->
                     if (isEs) {
-                        "Tenés el bloqueo total activado. Hoy ya cortaste $interceptionsToday aperturas automáticas."
+                        "Tienes el bloqueo total activado. Hoy ya has cortado $interceptionsToday aperturas automáticas."
                     } else {
                         "Zero scroll is on. You have already stopped $interceptionsToday automatic opens today."
                     }
@@ -433,7 +433,7 @@ fun InterruptionScreen(
             // Secondary Mindful Unlock (only if budget remains and countdown finished)
             if (canContinue) {
                 val unlockLabel = if (countdown > 0) {
-                    if (isEs) "Respirá ${countdown}s para seguir"
+                    if (isEs) "Respira ${countdown}s para seguir"
                     else "Breathe ${countdown}s to continue"
                 } else {
                     if (isEs) "Seguir con mi margen"
