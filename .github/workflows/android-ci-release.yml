@@ -9,21 +9,25 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 jobs:
+  # Branches and pull requests: test + debug + unsigned release. Never publishes.
   build-and-verify:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17 (Temurin)
+      - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "17"
+          java-version: "21"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -39,10 +43,10 @@ jobs:
           '
 
       - name: Run Unit Tests (Surgical Detection & Tab-Only Timer)
-        run: gradle testDebugUnitTest
+        run: ./gradlew testDebugUnitTest
 
-      - name: Assemble Reproducible Release APK
-        run: gradle assembleRelease
+      - name: Assemble Debug and Reproducible Release APK (unsigned)
+        run: ./gradlew assembleDebug assembleRelease
 
       - name: Compute SHA-256 Checksum
         run: sha256sum app/build/outputs/apk/release/*.apk
@@ -52,3 +56,105 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: "app/build/outputs/apk/release/*.apk"
+
+  # Tag v*: build, sign, attest and publish the APK to a GitHub Release.
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify Zero-Network Manifest Contract
+        run: |
+          python3 -c '
+          import xml.etree.ElementTree as ET
+          root = ET.parse("app/src/main/AndroidManifest.xml").getroot()
+          perms = [el.attrib.get("{http://schemas.android.com/apk/res/android}name") for el in root.findall("uses-permission")]
+          assert "android.permission.INTERNET" not in perms, "SECURITY VIOLATION: INTERNET permission found!"
+          print("Zero-Network Manifest verified: 0 network permissions declared.")
+          '
+
+      - name: Run Unit Tests (Surgical Detection & Tab-Only Timer)
+        run: ./gradlew testDebugUnitTest
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SCROLLESS_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SCROLLESS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SCROLLESS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SCROLLESS_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$KEYSTORE_BASE64" ] || missing="$missing SCROLLESS_KEYSTORE_BASE64"
+          [ -n "$KEYSTORE_PASSWORD" ] || missing="$missing SCROLLESS_KEYSTORE_PASSWORD"
+          [ -n "$KEY_ALIAS" ] || missing="$missing SCROLLESS_KEY_ALIAS"
+          [ -n "$KEY_PASSWORD" ] || missing="$missing SCROLLESS_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. Refusing to publish an unsigned APK. See RELEASING.md."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "Keystore decoded to \$RUNNER_TEMP/release.jks"
+
+      - name: Derive version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version: $VERSION (versionCode ${{ github.run_number }})"
+
+      - name: Assemble signed release APK
+        env:
+          SCROLLESS_KEYSTORE_PASSWORD: ${{ secrets.SCROLLESS_KEYSTORE_PASSWORD }}
+          SCROLLESS_KEY_ALIAS: ${{ secrets.SCROLLESS_KEY_ALIAS }}
+          SCROLLESS_KEY_PASSWORD: ${{ secrets.SCROLLESS_KEY_PASSWORD }}
+        run: |
+          export SCROLLESS_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+          ./gradlew assembleRelease "-PversionName=$VERSION" "-PversionCode=${{ github.run_number }}"
+
+      - name: Verify signature, rename and checksum
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK" ]; then
+            echo "::error::Signed APK not found (unsigned build?). Refusing to publish."
+            ls -l app/build/outputs/apk/release/ || true
+            exit 1
+          fi
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+          mkdir -p dist
+          cp "$APK" "dist/scrolless-$VERSION.apk"
+          (cd dist && sha256sum "scrolless-$VERSION.apk" > "scrolless-$VERSION.apk.sha256" && cat "scrolless-$VERSION.apk.sha256")
+
+      - name: Generate Cryptographic Build Provenance (SLSA Attestation)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/scrolless-${{ env.VERSION }}.apk"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/scrolless-$VERSION.apk" \
+            "dist/scrolless-$VERSION.apk.sha256" \
+            --title "Scrolless $VERSION" \
+            --verify-tag \
+            --generate-notes
+
+      - name: Delete decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"

@@ -6,6 +6,16 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Release signing (CI on tags): enabled only when all four variables are present.
+// Without them assembleRelease still produces the unsigned APK (local builds, PR CI).
+val releaseSigningEnv: Map<String, String>? = listOf(
+    "SCROLLESS_KEYSTORE_PATH",
+    "SCROLLESS_KEYSTORE_PASSWORD",
+    "SCROLLESS_KEY_ALIAS",
+    "SCROLLESS_KEY_PASSWORD",
+).associateWith { System.getenv(it).orEmpty() }
+    .takeIf { env -> env.values.all { it.isNotBlank() } }
+
 android {
     namespace = "com.scrolless.app"
     compileSdk = 35
@@ -14,13 +24,28 @@ android {
         applicationId = "com.scrolless.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI stamps these from the tag: -PversionName=1.2.3 -PversionCode=42
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseSigningEnv != null) {
+            create("release") {
+                storeFile = file(releaseSigningEnv.getValue("SCROLLESS_KEYSTORE_PATH"))
+                storePassword = releaseSigningEnv.getValue("SCROLLESS_KEYSTORE_PASSWORD")
+                keyAlias = releaseSigningEnv.getValue("SCROLLESS_KEY_ALIAS")
+                keyPassword = releaseSigningEnv.getValue("SCROLLESS_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (releaseSigningEnv != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
