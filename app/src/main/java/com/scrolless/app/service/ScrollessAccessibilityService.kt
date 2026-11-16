@@ -178,7 +178,13 @@ class ScrollessAccessibilityService : AccessibilityService() {
 
     private fun launchInterruption(decision: Decision.Interrupt) {
         val intent = Intent(this, InterruptionActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            // NO_USER_ACTION: the system does not treat this launch as the user leaving the watched
+            // app, so YouTube/Instagram never auto-enter Picture-in-Picture behind the pause screen.
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
             putExtra("target_id", decision.target.name)
             putExtra("target_name", decision.target.displayName)
             putExtra("reason_name", decision.reason.name)
