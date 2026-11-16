@@ -63,13 +63,15 @@ aapt dump permissions scrolless-<versión>.apk
 En [`app/build.gradle.kts`](app/build.gradle.kts), los archivos generados tienen `isPreserveFileTimestamps = false` e `isReproducibleFileOrder = true`. Si clonas este repositorio y compilas con JDK 21 (igual que la CI), obtendrás el **mismo APK sin firmar, bit por bit**, que construye GitHub Actions:
 
 ```bash
-git clone https://github.com/<tu-usuario>/scrolless.git
+git clone https://github.com/Ivan-olivera-dev/scrolless.git
 cd scrolless
-./gradlew assembleRelease
+git checkout v1.0.0
+# Usa la misma versión que el APK publicado (mírala con: aapt2 dump badging scrolless-1.0.0.apk | head -1)
+./gradlew assembleRelease -PversionName=1.0.0 -PversionCode=<versionCode del APK publicado>
 shasum -a 256 app/build/outputs/apk/release/*.apk
 ```
 
-El APK publicado en Releases además lleva la firma del autor, así que su hash difiere del sin firmar; su contenido (código y recursos) es el mismo y puedes compararlo con herramientas como `diffoscope`.
+La CI estampa `versionName` desde la etiqueta y `versionCode` desde el número de ejecución, así que para comparar hay que compilar con esos mismos valores. El APK publicado en Releases además lleva la firma del autor, así que su hash difiere del sin firmar; su contenido (código y recursos) es el mismo y puedes compararlo con herramientas como `diffoscope`.
 
 ### 3. Prueba Criptográfica de Origen (GitHub SLSA Attestation)
 Los binarios de cada release los compila y firma públicamente GitHub Actions ([`android-ci-release.yml`](.github/workflows/android-ci-release.yml)) al empujar una etiqueta `v*`, junto con una atestación criptográfica SLSA:
