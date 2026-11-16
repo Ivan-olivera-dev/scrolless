@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
@@ -68,6 +70,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
@@ -133,7 +137,7 @@ jobs:
             ls -l app/build/outputs/apk/release/ || true
             exit 1
           fi
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | grep -v -- "-rc" | sort -V | tail -n 1)"
           "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
           mkdir -p dist
           cp "$APK" "dist/scrolless-$VERSION.apk"
